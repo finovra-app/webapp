@@ -27,7 +27,7 @@ spec:
             - name: FAIL_MODE
               value: "false"
             - name: LATENCY_MS
-              value: "250"
+              value: "0"
           livenessProbe:
             httpGet:
               path: /healthz
