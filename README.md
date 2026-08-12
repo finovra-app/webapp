@@ -1,6 +1,6 @@
 # Finoxa
 
-A fake personal finance dashboard built for the ArgoCD/GitOps Udemy course.
+A demo personal finance dashboard built for the ArgoCD/GitOps Udemy course.
 Each backend "product" (accounts, investments, insurance, loans) shows up as a
 tile on the `dashboard` frontend.
 

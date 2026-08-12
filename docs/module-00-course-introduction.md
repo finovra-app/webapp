@@ -9,19 +9,19 @@
 ## What You'll Build
 
 Across this course you'll deploy, break, roll back, and promote **Finoxa** — a
-small, purpose-built fake fintech dashboard. It's not a real app with a real
-database; it exists so every GitOps concept in this course has something
-concrete and visual to happen to.
+small demo fintech app — a personal finance dashboard. It's not a production
+app with a real database; it exists so every GitOps concept in this course
+has something concrete and visual to happen to.
 
 Finoxa is 5 tiny microservices:
 
 | Service | Language | What it does |
 |---|---|---|
 | `dashboard` | Node.js | Renders a dark-themed page with one tile per backend service |
-| `accounts-service` | Node.js | Fake balance + transactions |
-| `insurance-service` | Node.js | Fake insurance policies |
-| `investments-service` | Python (FastAPI) | Fake investment portfolio |
-| `loans-service` | Python (FastAPI) | Fake loan balance |
+| `accounts-service` | Node.js | Sample balance + transactions |
+| `insurance-service` | Node.js | Sample insurance policies |
+| `investments-service` | Python (FastAPI) | Sample investment portfolio |
+| `loans-service` | Python (FastAPI) | Sample loan balance |
 
 The dashboard polls each backend's `/healthz` and `/version` endpoint every
 few seconds. A tile whose service isn't deployed yet doesn't error or
@@ -29,6 +29,25 @@ disappear — it renders greyed-out with **"Coming Soon"**. That one design
 choice is what makes every exercise in this course visible on screen: sync a
 new Application, watch a tile light up; roll back a bad release, watch a tile
 grey out again.
+
+### Architecture
+
+```mermaid
+flowchart LR
+    User((You: Browser)) -->|HTTP| Dashboard[dashboard]
+    Dashboard -->|"GET /healthz, /version"| Accounts[accounts-service]
+    Dashboard -->|"GET /healthz, /version"| Insurance[insurance-service]
+    Dashboard -->|"GET /healthz, /version"| Investments[investments-service]
+    Dashboard -->|"GET /healthz, /version"| Loans[loans-service]
+    style Dashboard fill:#6cf,stroke:#333
+```
+
+Every arrow out of `dashboard` is independent — each backend can be deployed,
+broken, rolled back, or removed entirely without touching the others or the
+dashboard's own code. That independence is what makes Finoxa useful for
+practicing GitOps on: every operation you perform targets one Kubernetes
+Deployment/Service pair, with an immediate, visible effect on exactly one
+tile.
 
 ### The version story
 

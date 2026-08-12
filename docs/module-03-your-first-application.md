@@ -12,14 +12,15 @@ By the end of this module, you should be able to:
 - Explain every field in an ArgoCD `Application` resource
 - Deploy Finoxa into your cluster through ArgoCD
 - Understand the difference between manual and automated sync
-- Explain what Prune and Self-Heal actually do
+- Explain what Prune and Self-Heal actually do, and demonstrate each in isolation
 - Read an application's sync status and health status correctly
+- Navigate the ArgoCD UI: resource tree, Pod logs, Diff, Sync panel, History and Rollback
 
 ---
 
 ## About Our Demo App: Finoxa
 
-You met Finoxa in Module 0: a small fake fintech dashboard where each backend
+You met Finoxa in Module 0: a small demo fintech app where each backend
 "product" (accounts, insurance, investments, loans) shows up as a tile. It
 ships as four whole-app releases — `1.0.0` through `4.0.0` — each unlocking
 exactly one more tile. In this module we deploy **v1.0.0**: just `dashboard`
@@ -28,9 +29,8 @@ and `accounts-service`. The other three tiles will render greyed-out
 their Kubernetes manifests simply don't exist in the repo yet. We'll add them
 in later modules, the same way a real team ships features incrementally.
 
-> **System requirements:** unlike an 11-service app, this needs almost
-> nothing — two Pods, ~200m CPU and ~256Mi RAM combined. No resource-saving
-> tricks needed this module.
+> **System requirements:** just two Pods, ~200m CPU and ~256Mi RAM combined.
+> No resource-saving tricks needed this module.
 
 ---
 
@@ -217,11 +217,148 @@ kubectl port-forward svc/dashboard -n finoxa 8082:3000
 
 Open **http://localhost:8082** — you should see the Finoxa header (v1.0.0) and **four tiles**: 💰 Accounts in green (`ok`), and Insurance/Investments/Loans greyed out with **"Coming Soon"**. That's expected — their manifests don't exist in `k8s/plain-manifests/` yet, so ArgoCD never created them, and the dashboard's `SERVICES` config lists all four regardless of what's actually deployed.
 
-> **Note:** unlike a Loadgenerator-style component, Finoxa has nothing to scale down here — both Pods together use about 200m CPU and 256Mi RAM. No resource-saving step needed this module.
+> **Note:** Finoxa has nothing to scale down here — both Pods together use about 200m CPU and 256Mi RAM. No resource-saving step needed this module.
 
-### Step 6 — Enable automated sync with prune and self-heal
+---
 
-Edit `finoxa-app.yaml`:
+## GUI Walkthrough: Navigating ArgoCD
+
+Now that you have one real Application to look at, it's worth a proper tour of the UI before we start flipping sync policy settings — you'll be living in this screen for the rest of the course.
+
+1. **Applications list** (https://localhost:8080) — one tile per Application. Each tile carries two *independent* indicators — don't confuse them:
+
+   | Indicator | What it shows |
+   |---|---|
+   | Sync status icon | ✔ green = `Synced`, ⟳ orange = `OutOfSync` |
+   | Health status color | Green heart = `Healthy`, blue spinner = `Progressing`, red heart = `Degraded`, grey = `Unknown`/`Missing` |
+
+2. **Click the `finoxa` tile → resource tree.** This is the actual object graph ArgoCD created: the Application node at top, flowing down to the Namespace, Deployments, the ReplicaSets each Deployment owns, the Pods each ReplicaSet owns, and the Services. Every node is colored by *its own* health — in a bigger app later in the course, this is how you'll spot exactly which one resource is unhealthy instead of guessing.
+
+3. **Click the `accounts-service` Pod node** — a side panel opens with three tabs:
+   - **Logs** — live-streamed container logs, same content as `kubectl logs`
+   - **Events** — Kubernetes events for that Pod (scheduling, image pulls, probe failures)
+   - **Manifest** — the live YAML currently running in the cluster, *not* what's in Git
+
+4. **Top toolbar** (above the resource tree):
+   - **App Details** — the raw Application spec: source repoURL/path/targetRevision, destination, sync policy. Your fastest "what is this actually configured to do" check without leaving the UI.
+   - **Diff** — compares live cluster state against Git, field by field. Empty diff = fully `Synced`.
+   - **Sync** — opens a panel with checkboxes for Prune, Dry Run, and sync options — the same knobs we're about to set on the Application spec itself, but usable ad hoc for a single sync.
+   - **History and Rollback** — every past sync, with a one-click revert. We'll use this heavily in Module 7.
+
+5. **Refresh icon** — forces ArgoCD to immediately re-diff against Git instead of waiting for its normal reconciliation loop. We'll let the real timer run in the next few steps so you see genuinely automated behavior, but it's worth knowing this exists for when you don't want to wait.
+
+Spend a minute clicking around before continuing — every button here maps to something we'll use for real starting in Module 4.
+
+---
+
+## Enabling Sync Features — One at a Time
+
+We're deliberately doing this differently from how you might see it written elsewhere: `automated`, `prune`, and `selfHeal` each get their **own step and their own demo**, in isolation, before the next one gets added. By the end of Step 8 all three will be on together — but you'll have watched each one do its *specific* job on its own first, not as a bundle you have to take on faith.
+
+### Step 6 — Feature 1: Automated Sync (on its own)
+
+Edit `finoxa-app.yaml` to enable automated sync, with **no prune, no selfHeal yet**:
+
+```yaml
+spec:
+  syncPolicy:
+    automated: {}
+    syncOptions:
+      - CreateNamespace=true
+```
+
+Reapply:
+
+```bash
+kubectl apply -f finoxa-app.yaml
+```
+
+Nothing visibly changes — the cluster already matches Git. The point of this step is what happens next.
+
+**Demo it:** make a real Git change and watch ArgoCD deploy it without you ever running `kubectl apply` or `argocd app sync`.
+
+1. In your fork, open `k8s/plain-manifests/accounts-service/deployment.yaml` and change the `LATENCY_MS` env var from `"0"` to `"250"`
+2. Commit and push:
+   ```bash
+   git add k8s/plain-manifests/accounts-service/deployment.yaml
+   git commit -m "Add artificial latency to accounts-service"
+   git push origin main
+   ```
+3. Don't touch `kubectl` or `argocd`. Just watch:
+   ```bash
+   kubectl get deployment accounts-service -n finoxa -o jsonpath='{.spec.template.spec.containers[0].env}' -w
+   ```
+
+ArgoCD polls Git roughly every 3 minutes by default — you'll see the env var flip to `250` on its own once it does. That's the entire "automated" behavior: **Git changed → cluster changed, with nothing in between.**
+
+**Checkpoint:** the live Deployment's `LATENCY_MS` matches what you pushed to Git, and you never ran a sync command.
+
+> Revert this change afterward (`LATENCY_MS` back to `"0"`, commit, push) before moving on — Step 8 reuses `accounts-service` for a clean demo of its own.
+
+### Step 7 — Feature 2: Prune
+
+Add `prune: true` to what you already have:
+
+```yaml
+spec:
+  syncPolicy:
+    automated:
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+Reapply the Application and confirm nothing changes yet — same reasoning as Step 6, the cluster already matches Git.
+
+**Demo it:** add a throwaway resource via Git, then remove it, and watch `prune` clean up after you.
+
+1. Create a new file `k8s/plain-manifests/dashboard/prune-demo-configmap.yaml`:
+   ```yaml
+   apiVersion: v1
+   kind: ConfigMap
+   metadata:
+     name: finoxa-prune-demo
+     labels:
+       app: dashboard
+   data:
+     note: "temporary — created to demo prune"
+   ```
+2. Commit and push. Wait for automated sync to pick it up (same ~3 min window as Step 6 — or click the UI's refresh icon if you don't want to wait), then confirm it exists:
+   ```bash
+   kubectl get configmap finoxa-prune-demo -n finoxa
+   ```
+3. Now delete the file from the repo entirely, and push that too:
+   ```bash
+   git rm k8s/plain-manifests/dashboard/prune-demo-configmap.yaml
+   git commit -m "Remove prune demo ConfigMap"
+   git push origin main
+   ```
+4. Watch it disappear from the cluster on its own:
+   ```bash
+   kubectl get configmap finoxa-prune-demo -n finoxa -w
+   ```
+
+**Checkpoint:** the ConfigMap is gone, and you never ran `kubectl delete`. If `prune` had been left `false`, this ConfigMap would still be sitting in your cluster right now — Git says it shouldn't exist, but nothing ever told the cluster to remove it. That's an **orphaned resource**, and it's exactly what `prune: true` prevents.
+
+### Step 8 — Feature 3: Self-Heal (with a before/after)
+
+This is the one worth seeing fail first, so the fix is unmistakable.
+
+**Before — try it without self-heal:**
+
+```bash
+kubectl scale deployment accounts-service -n finoxa --replicas=3
+argocd app get finoxa
+kubectl get deployment accounts-service -n finoxa
+```
+
+You'll see `Sync Status: OutOfSync` — ArgoCD noticed the drift and is telling you about it — but the replica count **stays at 3**. Automated sync only reacts to *Git* changing; a manual `kubectl` change to something already deployed isn't something it corrects unless you ask it to. Scale it back down by hand before continuing:
+
+```bash
+kubectl scale deployment accounts-service -n finoxa --replicas=1
+```
+
+**After — turn on self-heal:**
 
 ```yaml
 spec:
@@ -233,24 +370,20 @@ spec:
       - CreateNamespace=true
 ```
 
-Reapply:
-
 ```bash
 kubectl apply -f finoxa-app.yaml
 ```
 
-**Checkpoint:** `argocd app get finoxa` should show `Sync Status: Synced` and `Health Status: Healthy`, and the UI resource tree should show every resource green.
-
-### Step 7 — Preview of Module 4: try to break it
-
-With self-heal on, try scaling `accounts-service` up by hand:
+Now repeat the exact same drift:
 
 ```bash
 kubectl scale deployment accounts-service -n finoxa --replicas=3
 kubectl get deployment accounts-service -n finoxa -w
 ```
 
-Within a few seconds, ArgoCD notices the live replica count (3) no longer matches Git (`replicas: 1`, explicitly set in `deployment.yaml`) and scales it back down — without you doing anything. Press `Ctrl+C` once it settles back at `1/1`. We'll dig into exactly why this happened, and how to make a change that's supposed to stick, in Module 4.
+This time, within a few seconds, ArgoCD scales it back down to `1` on its own — no Git change, no further `kubectl`, no `argocd app sync`. Press `Ctrl+C` once it settles at `1/1`.
+
+**Checkpoint:** `argocd app get finoxa` shows `Sync Status: Synced` and `Health Status: Healthy`, and you've now watched the identical command (`kubectl scale --replicas=3`) produce two different outcomes — entirely because of one flag: `selfHeal`.
 
 > **💡 Debugging tip: trust the live object, not your local file.** A very common source of confusion: you edit `finoxa-app.yaml` locally, but forget you already `kubectl apply`'d an earlier version — or you applied a change, then kept editing the file afterward without reapplying it. The file on your disk and the actual `Application` object running in the cluster can silently drift apart, and only one of them is actually in control. If ArgoCD is doing something you don't expect (like reverting a change you just made), always check what's *actually* running before assuming your local file is accurate:
 > ```bash
@@ -272,6 +405,9 @@ Within a few seconds, ArgoCD notices the live replica count (3) no longer matche
 | **Self-Heal** | Reverts manual cluster changes back to match Git automatically |
 | **Resource tree** | The UI view showing every Kubernetes resource an Application owns and their relationships |
 | **`directory.recurse`** | Tells ArgoCD's directory source to walk into subfolders instead of only reading files at the top level of `source.path` |
+| **Diff view** | UI panel comparing live cluster state to Git, field by field — empty means fully `Synced` |
+| **History and Rollback** | UI tab listing every past sync with a one-click revert (Module 7) |
+| **Orphaned resource** | A resource still running in the cluster after being removed from Git — what `prune: true` cleans up automatically |
 
 ---
 
@@ -280,12 +416,13 @@ Within a few seconds, ArgoCD notices the live replica count (3) no longer matche
 1. What are the three things every `Application` resource must define?
 2. If `syncPolicy.automated` is left out entirely, what happens when you push a change to Git — does anything deploy automatically?
 3. Can an application be `Synced` and `Degraded` at the same time? Why or why not?
-4. What's the difference between what `prune: true` does versus what `selfHeal: true` does?
-5. In Step 7 of the lab, why did scaling `accounts-service` up with `kubectl` get reverted once self-heal was enabled — and what would you need to do differently to make that change stick?
+4. In Step 7, why did the ConfigMap need `prune: true` specifically to get removed, when `automated` sync alone was already enough to *create* it back in Step 6?
+5. In Step 8, the exact same `kubectl scale --replicas=3` command produced two different outcomes. What changed between the "before" and "after," and why?
 6. Why do Insurance, Investments, and Loans show "Coming Soon" instead of erroring or crashing the Application's health status?
+7. What's the difference between what the UI's "Diff" view shows you and what the "resource tree" shows you?
 
 ---
 
 ## What's Next
 
-In **Module 4**, we'll deliberately cause drift again — this time digging into *why* it gets reverted — and then make a change that's supposed to stick: adding `insurance-service` to the repo and watching Finoxa go from v1.0.0 to v2.0.0 with zero manual `kubectl` involvement.
+In **Module 4**, we'll build on the automated sync you just watched work: adding `insurance-service` to the repo and pushing, and watching Finoxa go from v1.0.0 to v2.0.0 — the Insurance tile flipping from "Coming Soon" to live — with zero manual `kubectl` or `argocd` involvement.

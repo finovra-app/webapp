@@ -1,12 +1,12 @@
 # loans-service
 
-Python + FastAPI. Fake personal finance "loans" product.
+Python + FastAPI. Sample personal finance "loans" product.
 
 ## Endpoints
 
 - `GET /healthz` → `200 {"status": "ok"}`
 - `GET /version` → `{"version": "<VERSION>", "service": "loans-service"}`
-- `GET /loans` → fake loan balance + next payment date/amount
+- `GET /loans` → sample loan balance + next payment date/amount
 
 ## Config (env vars)
 

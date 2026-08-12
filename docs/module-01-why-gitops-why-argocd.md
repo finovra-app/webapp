@@ -119,7 +119,7 @@ It's not a CI tool, not a build tool, and not a general-purpose automation tool 
 
 ## 6. A Realistic Example Walkthrough
 
-Say your team wants to ship a new release of Finoxa's `accounts-service` — the fake balance/transactions tile you met in Module 0. Here's what actually happens end to end:
+Say your team wants to ship a new release of Finoxa's `accounts-service` — the balance/transactions tile you met in Module 0. Here's what actually happens end to end:
 
 1. A developer merges a PR that updates the image tag in the manifests repo:
 

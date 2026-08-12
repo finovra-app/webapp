@@ -1,12 +1,12 @@
 # investments-service
 
-Python + FastAPI. Fake personal finance "investments" product.
+Python + FastAPI. Sample personal finance "investments" product.
 
 ## Endpoints
 
 - `GET /healthz` → `200 {"status": "ok"}`
 - `GET /version` → `{"version": "<VERSION>", "service": "investments-service"}`
-- `GET /portfolio` → fake holdings + total portfolio value
+- `GET /portfolio` → sample holdings + total portfolio value
 
 ## Config (env vars)
 

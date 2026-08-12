@@ -1,12 +1,12 @@
 # insurance-service
 
-Node.js + Express. Fake personal finance "insurance" product.
+Node.js + Express. Sample personal finance "insurance" product.
 
 ## Endpoints
 
 - `GET /healthz` → `200 {"status": "ok"}`
 - `GET /version` → `{"version": "<VERSION>", "service": "insurance-service"}`
-- `GET /policies` → 2 fake insurance policies
+- `GET /policies` → 2 sample insurance policies
 
 ## Config (env vars)
 

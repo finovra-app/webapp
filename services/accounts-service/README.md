@@ -1,12 +1,12 @@
 # accounts-service
 
-Node.js + Express. Fake personal finance "accounts" product.
+Node.js + Express. Sample personal finance "accounts" product.
 
 ## Endpoints
 
 - `GET /healthz` → `200 {"status": "ok"}`
 - `GET /version` → `{"version": "<VERSION>", "service": "accounts-service"}`
-- `GET /account` → fake balance + 3 fake transactions
+- `GET /account` → sample balance + 3 sample transactions
 
 ## Config (env vars)
 
