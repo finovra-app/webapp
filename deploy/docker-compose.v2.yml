@@ -1,0 +1,29 @@
+# Finoxa v2.0.0 — Accounts + Insurance. Investments/Loans still "Coming Soon".
+services:
+  dashboard:
+    image: arsr319/finoxa-dashboard:2.0.0
+    ports:
+      - "8082:3000"
+    environment:
+      - PORT=3000
+      - VERSION=2.0.0
+      - SERVICES=accounts:http://accounts-service:8000,insurance:http://insurance-service:8000,investments:http://investments-service:8000,loans:http://loans-service:8000
+    depends_on:
+      - accounts-service
+      - insurance-service
+
+  accounts-service:
+    image: arsr319/finoxa-accounts-service:2.0.0
+    environment:
+      - PORT=8000
+      - VERSION=2.0.0
+      - FAIL_MODE=false
+      - LATENCY_MS=0
+
+  insurance-service:
+    image: arsr319/finoxa-insurance-service:2.0.0
+    environment:
+      - PORT=8000
+      - VERSION=2.0.0
+      - FAIL_MODE=false
+      - LATENCY_MS=0

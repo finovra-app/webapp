@@ -1,0 +1,50 @@
+# Local dev compose: builds every service from source and enables all of them.
+# For the "which version looked like what" demo (progressively enabled tiles,
+# "Coming Soon" grey-outs), use deploy/docker-compose.v1.yml..v4.yml instead —
+# those pull pinned, published images from Docker Hub.
+services:
+  dashboard:
+    build: ./services/dashboard
+    ports:
+      - "8082:3000"
+    environment:
+      - PORT=3000
+      - VERSION=4.0.0
+      - SERVICES=accounts:http://accounts-service:8000,insurance:http://insurance-service:8000,investments:http://investments-service:8000,loans:http://loans-service:8000
+    depends_on:
+      - accounts-service
+      - insurance-service
+      - investments-service
+      - loans-service
+
+  accounts-service:
+    build: ./services/accounts-service
+    environment:
+      - PORT=8000
+      - VERSION=4.0.0
+      - FAIL_MODE=false
+      - LATENCY_MS=0
+
+  insurance-service:
+    build: ./services/insurance-service
+    environment:
+      - PORT=8000
+      - VERSION=4.0.0
+      - FAIL_MODE=false
+      - LATENCY_MS=0
+
+  investments-service:
+    build: ./services/investments-service
+    environment:
+      - PORT=8000
+      - VERSION=4.0.0
+      - FAIL_MODE=false
+      - LATENCY_MS=0
+
+  loans-service:
+    build: ./services/loans-service
+    environment:
+      - PORT=8000
+      - VERSION=4.0.0
+      - FAIL_MODE=false
+      - LATENCY_MS=0

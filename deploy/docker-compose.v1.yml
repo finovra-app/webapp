@@ -1,0 +1,22 @@
+# Finoxa v1.0.0 — Accounts only. Insurance/Investments/Loans are listed in
+# SERVICES but have no container here, so the dashboard renders them
+# greyed-out "Coming Soon" tiles automatically.
+services:
+  dashboard:
+    image: arsr319/finoxa-dashboard:1.0.0
+    ports:
+      - "8082:3000"
+    environment:
+      - PORT=3000
+      - VERSION=1.0.0
+      - SERVICES=accounts:http://accounts-service:8000,insurance:http://insurance-service:8000,investments:http://investments-service:8000,loans:http://loans-service:8000
+    depends_on:
+      - accounts-service
+
+  accounts-service:
+    image: arsr319/finoxa-accounts-service:1.0.0
+    environment:
+      - PORT=8000
+      - VERSION=1.0.0
+      - FAIL_MODE=false
+      - LATENCY_MS=0

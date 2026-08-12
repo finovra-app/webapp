@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Finoxa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-900 text-slate-100 min-h-screen">
+    <header class="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+      <h1 class="text-2xl font-bold tracking-tight">Finoxa</h1>
+      <span id="dashboard-version" class="text-sm text-slate-400">v...</span>
+    </header>
+
+    <main class="p-6">
+      <div id="tiles" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </main>
+
+    <script>
+      const POLL_INTERVAL_MS = 5000;
+
+      function tileHtml(tile) {
+        if (!tile.healthy) {
+          return `
+            <div class="rounded-xl border border-slate-800 bg-slate-800/40 p-5 opacity-50">
+              <div class="text-3xl mb-2">${tile.icon}</div>
+              <div class="text-lg font-semibold capitalize">${tile.name}</div>
+              <div class="text-sm text-slate-400 mt-1">Coming Soon</div>
+            </div>`;
+        }
+        return `
+          <div class="rounded-xl border border-slate-800 bg-slate-800 p-5">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-3xl">${tile.icon}</div>
+              <span class="inline-flex items-center gap-1.5 text-xs text-emerald-400">
+                <span class="h-2 w-2 rounded-full bg-emerald-400"></span> ${tile.status}
+              </span>
+            </div>
+            <div class="text-lg font-semibold capitalize">${tile.name}</div>
+            <div class="text-sm text-slate-400 mt-1">${tile.version ? "v" + tile.version : ""}</div>
+          </div>`;
+      }
+
+      async function refreshTiles() {
+        try {
+          const res = await fetch("/api/tiles");
+          const data = await res.json();
+          document.getElementById("dashboard-version").textContent = `v${data.dashboardVersion}`;
+          document.getElementById("tiles").innerHTML = data.tiles.map(tileHtml).join("");
+        } catch (err) {
+          console.error("failed to refresh tiles", err);
+        }
+      }
+
+      refreshTiles();
+      setInterval(refreshTiles, POLL_INTERVAL_MS);
+    </script>
+  </body>
+</html>
