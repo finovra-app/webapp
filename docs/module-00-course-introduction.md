@@ -24,11 +24,12 @@ Finovra is 5 tiny microservices:
 | `loans-service` | Python (FastAPI) | Sample loan balance |
 
 The dashboard polls each backend's `/healthz` and `/version` endpoint every
-few seconds. A tile whose service isn't deployed yet doesn't error or
-disappear — it renders greyed-out with **"Coming Soon"**. That one design
-choice is what makes every exercise in this course visible on screen: sync a
-new Application, watch a tile light up; roll back a bad release, watch a tile
-grey out again.
+few seconds. All four backends deploy together from the very first lab — every
+tile shows real, live data as soon as Finovra is up. If a tile ever does grey
+out with **"Unavailable"**, that's not a placeholder — it means that backend
+is genuinely down. That's a deliberate design choice: it's what makes drift,
+failure, and rollback exercises later in this course visible on screen
+instead of something you have to take on faith from a `kubectl` command.
 
 ### Architecture
 
@@ -51,19 +52,27 @@ tile.
 
 ### The version story
 
-Finovra ships four whole-app releases, each unlocking exactly one more tile:
+Unlike most demo apps, Finovra's four backend services don't get their own
+version numbers — they stay pinned at `1.0.0` for almost the entire course.
+Instead, it's the **`dashboard`** that carries a new version each time you
+reach a module that needs one, and each version adds one real, visible
+feature — not a new service, just like a real release usually does:
 
-| Version | Unlocks |
-|---|---|
-| `1.0.0` | Accounts |
-| `2.0.0` | + Insurance |
-| `3.0.0` | + Investments |
-| `4.0.0` | + Loans |
+| Version | Adds | Introduced in |
+|---|---|---|
+| `1.0.0` | Baseline dashboard, all four tiles live | Module 3 |
+| `2.0.0` | A "What's New" changelog panel — built via the CI pipeline itself | Module 5 (CI) |
+| `3.0.0` | Summary stats bar + a production-feel polish pass | Module 8 (Promotion) |
+
+Modules 6 and 7 (rollbacks and progressive delivery) use a separate,
+one-off broken release — `arsr319/finovra-dashboard:1.0.1` — as practice
+material. It's deliberately off this roadmap: the whole point of those
+modules is recovering from it.
 
 Every image is already built and published for you on Docker Hub as
 `arsr319/finovra-<service>:<version>` — for example
-`arsr319/finovra-dashboard:2.0.0`. **You never need to build anything
-yourself** until Module 6 (CI with GitHub Actions), where you'll finally look
+`arsr319/finovra-accounts-service:1.0.0`. **You never need to build anything
+yourself** until Module 5 (CI with GitHub Actions), where you'll finally look
 under the hood at how those images got there. Until then, every lab just
 points ArgoCD at a pre-built image tag.
 

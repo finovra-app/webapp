@@ -39,7 +39,7 @@ flowchart TB
 | **Repo Server** | Clones your Git repos and renders manifests (runs `helm template`, `kustomize build`, etc. internally). Never touches the live cluster directly. |
 | **Application Controller** | The reconciliation loop itself — continuously compares live cluster state to what the Repo Server rendered from Git, and triggers syncs. |
 | **Redis** | Caching layer — stores rendered manifests and cluster state to avoid re-computing on every reconciliation tick. |
-| **Dex** (optional) | Handles SSO/OIDC login (GitHub, Google, LDAP, etc.) — we'll configure this properly in Module 10. |
+| **Dex** (optional) | Handles SSO/OIDC login (GitHub, Google, LDAP, etc.) — we'll cover what it solves in Module 9. |
 
 **Key insight:** notice that only the **Application Controller** talks to your actual workloads. The Repo Server only ever talks to Git — it has no cluster-write access. This separation is part of why ArgoCD's architecture is considered secure by design.
 

@@ -21,16 +21,15 @@ By the end of this module, you should be able to:
 ## About Our Demo App: Finovra
 
 You met Finovra in Module 0: a small demo fintech app where each backend
-"product" (accounts, insurance, investments, loans) shows up as a tile. It
-ships as four whole-app releases — `1.0.0` through `4.0.0` — each unlocking
-exactly one more tile. In this module we deploy **v1.0.0**: just `dashboard`
-and `accounts-service`. The other three tiles will render greyed-out
-"Coming Soon" — not because we configured anything special, but because
-their Kubernetes manifests simply don't exist in the repo yet. We'll add them
-in later modules, the same way a real team ships features incrementally.
+"product" (accounts, insurance, investments, loans) shows up as a tile. In
+this module we deploy **v1.0.0**: `dashboard` and all four backend services,
+together, in one Application. Every tile shows real, live data from the
+moment the sync completes — there's no "unlock one service per module" story
+here. Later modules bump the **dashboard's** version as it gains real
+features; the backends stay exactly as they are today.
 
-> **System requirements:** just two Pods, ~200m CPU and ~256Mi RAM combined.
-> No resource-saving tricks needed this module.
+> **System requirements:** five small Pods, ~250m CPU and ~320Mi RAM combined
+> (requests). No resource-saving tricks needed this module.
 
 ### Two Repos: App Code vs. GitOps Config
 
@@ -38,7 +37,7 @@ Finovra actually lives across two GitHub repos, and it's worth knowing why befor
 
 | Repo | Holds | Changes when... | You'll edit it starting... |
 |---|---|---|---|
-| [`finovra-app/webapp`](https://github.com/finovra-app/webapp) | Service source code, Dockerfiles | The application itself changes | Module 6 (CI) |
+| [`finovra-app/webapp`](https://github.com/finovra-app/webapp) | Service source code, Dockerfiles | The application itself changes | Module 5 (CI) |
 | [`finovra-app/gitops`](https://github.com/finovra-app/gitops) | Kubernetes manifests, the `Application` resource | The *desired state of the cluster* changes | **This module** |
 
 This is a standard "app repo vs. config repo" split used by most real GitOps
@@ -80,7 +79,7 @@ metadata:
   name: finovra               # This is the name you'll see in the UI/CLI
   namespace: argocd          # Applications always live in the argocd namespace itself
 spec:
-  project: default           # Which AppProject this belongs to (default for now — Module 10 covers custom projects)
+  project: default           # Which AppProject this belongs to (default for now — Module 9 covers custom projects)
   source:
     repoURL: https://github.com/finovra-app/gitops.git
     targetRevision: main     # Branch, tag, or commit SHA to track
@@ -98,7 +97,7 @@ spec:
 A few things worth noticing:
 - `destination.server: https://kubernetes.default.svc` is a special value meaning "the cluster ArgoCD itself is running in" — you'll use a different value here once we add a second cluster in Module 11
 - `repoURL` points at the **`gitops`** repo, not `webapp` — see "Two Repos" above
-- `source.path: k8s/plain-manifests` points at a folder containing **one subfolder per service** (`dashboard/`, `accounts-service/`, and later `insurance-service/`, `investments-service/`, `loans-service/` as we add them), each holding a `deployment.yaml` and `service.yaml`
+- `source.path: k8s/plain-manifests` points at a folder containing **one subfolder per service** — `dashboard/`, `accounts-service/`, `insurance-service/`, `investments-service/`, `loans-service/`, all five already there — each holding a `deployment.yaml` and `service.yaml`
 - `directory.recurse: true` tells ArgoCD to walk into those subfolders rather than stopping at the top level. Without it, ArgoCD would find zero YAML files directly in `k8s/plain-manifests/` and deploy nothing
 - `CreateNamespace=true` is a small but handy sync option — without it, ArgoCD would fail to sync into a namespace that doesn't exist yet
 
@@ -122,7 +121,7 @@ spec:
 | Speed | Slower — someone has to notice and click | Fast — changes land within seconds of a Git push |
 | Risk | Lower — nothing changes without a human looking at it | Higher — a bad commit deploys immediately unless caught by CI first |
 
-Most real teams run **automated sync in dev/staging** and either **automated with strict CI gating** or **manual approval** in production — we'll build exactly this pattern in Module 9 (Promotion).
+Most real teams run **automated sync in dev/staging** and either **automated with strict CI gating** or **manual approval** in production — we'll build exactly this pattern in Module 8 (Promotion).
 
 ---
 
@@ -160,7 +159,7 @@ flowchart LR
 | **Sync Status** | "Does what's running match what's in Git?" | `Synced`, `OutOfSync`, `Unknown` |
 | **Health Status** | "Are the running resources actually healthy?" | `Healthy`, `Progressing`, `Degraded`, `Missing`, `Unknown` |
 
-**An application can be `Synced` and still `Degraded`** — Git and the cluster agree on what *should* be running, but a Pod is crash-looping. That's a completely valid (if unfortunate) state, and knowing this distinction will save you a lot of confusion when debugging later modules, especially Module 7 (rollbacks).
+**An application can be `Synced` and still `Degraded`** — Git and the cluster agree on what *should* be running, but a Pod is crash-looping. That's a completely valid (if unfortunate) state, and knowing this distinction will save you a lot of confusion when debugging later modules, especially Module 6 (rollbacks).
 
 ---
 
@@ -220,7 +219,7 @@ argocd app sync finovra
 
 Or via UI: click into the `finovra` application and click **Sync → Synchronize**.
 
-You should see 5 resources get created: the `finovra` Namespace, two Services, and two Deployments (`dashboard`, `accounts-service`).
+You should see 11 resources get created: the `finovra` Namespace, five Services, and five Deployments (`dashboard`, `accounts-service`, `insurance-service`, `investments-service`, `loans-service`).
 
 ### Step 4 — Watch it become healthy
 
@@ -229,7 +228,7 @@ argocd app get finovra
 kubectl get pods -n finovra
 ```
 
-Wait until `Health Status: Healthy` and both Pods show `1/1 Running` — this takes seconds, not minutes, since we're only pulling two small images. In the UI, click into the application to see the **resource tree**: the Namespace, both Services, both Deployments, and their Pods, all green.
+Wait until `Health Status: Healthy` and all five Pods show `1/1 Running` — this takes well under a minute, since these are small images. In the UI, click into the application to see the **resource tree**: the Namespace, all five Services, all five Deployments, and their Pods, all green.
 
 ### Step 5 — See the app in your browser
 
@@ -237,9 +236,9 @@ Wait until `Health Status: Healthy` and both Pods show `1/1 Running` — this ta
 kubectl port-forward svc/dashboard -n finovra 8082:3000
 ```
 
-Open **http://localhost:8082** — you should see the Finovra header (v1.0.0) and **four tiles**: 💰 Accounts in green (`ok`), and Insurance/Investments/Loans greyed out with **"Coming Soon"**. That's expected — their manifests don't exist in `k8s/plain-manifests/` yet, so ArgoCD never created them, and the dashboard's `SERVICES` config lists all four regardless of what's actually deployed.
+Open **http://localhost:8082** — you should see the Finovra header (v1.0.0) and **all four tiles green**: 💰 Accounts, 🛡️ Insurance, 📈 Investments, and 🏦 Loans, each showing `ok` and `v1.0.0`. No greyed-out tiles — that's the whole point of deploying all four backends together.
 
-> **Note:** Finovra has nothing to scale down here — both Pods together use about 200m CPU and 256Mi RAM. No resource-saving step needed this module.
+> **Note:** Finovra has nothing to scale down here — all five Pods together use about 250m CPU and 320Mi RAM. No resource-saving step needed this module.
 
 ---
 
@@ -265,11 +264,11 @@ Now that you have one real Application to look at, it's worth a proper tour of t
    - **App Details** — the raw Application spec: source repoURL/path/targetRevision, destination, sync policy. Your fastest "what is this actually configured to do" check without leaving the UI.
    - **Diff** — compares live cluster state against Git, field by field. Empty diff = fully `Synced`.
    - **Sync** — opens a panel with checkboxes for Prune, Dry Run, and sync options — the same knobs we're about to set on the Application spec itself, but usable ad hoc for a single sync.
-   - **History and Rollback** — every past sync, with a one-click revert. We'll use this heavily in Module 7.
+   - **History and Rollback** — every past sync, with a one-click revert. We'll use this heavily in Module 6.
 
 5. **Refresh icon** — forces ArgoCD to immediately re-diff against Git instead of waiting for its normal reconciliation loop. We'll let the real timer run in the next few steps so you see genuinely automated behavior, but it's worth knowing this exists for when you don't want to wait.
 
-Spend a minute clicking around before continuing — every button here maps to something we'll use for real starting in Module 4.
+Spend a minute clicking around before continuing — every button here maps to something we'll use for real throughout the rest of the course.
 
 ---
 
@@ -433,7 +432,7 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 | Term | Meaning |
 |---|---|
 | **Application** | ArgoCD's core CRD — represents one deployable unit: a Git source + a destination + a sync policy |
-| **AppProject** | A grouping/permissions boundary for Applications (default for now, covered properly in Module 10) |
+| **AppProject** | A grouping/permissions boundary for Applications (default for now, covered properly in Module 9) |
 | **Sync Status** | Whether live cluster state matches Git (`Synced` / `OutOfSync`) |
 | **Health Status** | Whether the deployed resources are actually working (`Healthy` / `Degraded` / etc.) |
 | **Prune** | Deletes cluster resources that were removed from Git |
@@ -441,7 +440,7 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 | **Resource tree** | The UI view showing every Kubernetes resource an Application owns and their relationships |
 | **`directory.recurse`** | Tells ArgoCD's directory source to walk into subfolders instead of only reading files at the top level of `source.path` |
 | **Diff view** | UI panel comparing live cluster state to Git, field by field — empty means fully `Synced` |
-| **History and Rollback** | UI tab listing every past sync with a one-click revert (Module 7) |
+| **History and Rollback** | UI tab listing every past sync with a one-click revert (Module 6) |
 | **Orphaned resource** | A resource still running in the cluster after being removed from Git — what `prune: true` cleans up automatically |
 
 ---
@@ -453,11 +452,11 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 3. Can an application be `Synced` and `Degraded` at the same time? Why or why not?
 4. In Step 7, `automated` sync alone was enough to *create* the ConfigMap, but not enough to remove it once deleted from Git. Why the asymmetry?
 5. In Step 8, the exact same `kubectl scale --replicas=3` command produced two different outcomes. What changed between the "before" and "after," and why?
-6. Why do Insurance, Investments, and Loans show "Coming Soon" instead of erroring or crashing the Application's health status?
+6. `dashboard`, `accounts-service`, `insurance-service`, `investments-service`, and `loans-service` are five separate Deployment/Service pairs inside one Application. Why does deploying them all together as one Application not mean they're coupled at runtime?
 7. What's the difference between what the UI's "Diff" view shows you and what the "resource tree" shows you?
 
 ---
 
 ## What's Next
 
-In **Module 4**, we'll build on the automated sync you just watched work: adding `insurance-service` to the repo and pushing, and watching Finovra go from v1.0.0 to v2.0.0 — the Insurance tile flipping from "Coming Soon" to live — with zero manual `kubectl` or `argocd` involvement.
+In **Module 4**, we'll redeploy Finovra using its Helm chart instead of the plain YAML manifests we just used, and then compare that to a Kustomize-based deployment of the same app — two different ways to describe "what should be running," now that you've seen how the plain-YAML version behaves.
