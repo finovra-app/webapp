@@ -4,9 +4,13 @@ A demo personal finance dashboard built for the ArgoCD/GitOps Udemy course.
 Each backend "product" (accounts, investments, insurance, loans) shows up as a
 tile on the `dashboard` frontend.
 
-**Status:** all 4 backend services + dashboard scaffolded. Kubernetes
-manifests, Helm chart, Kustomize overlays, CI workflow, and build script are
-not built yet.
+**Status:** all 4 backend services + dashboard scaffolded. Helm chart,
+Kustomize overlays, CI workflow, and build script are not built yet.
+
+> Kubernetes manifests and the ArgoCD `Application` definition live in a
+> separate repo: [`finoxa-argocd/gitops`](https://github.com/finoxa-argocd/gitops)
+> — this repo (`finoxa-app`) holds only application source code and
+> Dockerfiles. See Module 3 for why.
 
 ## Versioning
 

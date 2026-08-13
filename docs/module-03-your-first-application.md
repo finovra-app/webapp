@@ -32,6 +32,25 @@ in later modules, the same way a real team ships features incrementally.
 > **System requirements:** just two Pods, ~200m CPU and ~256Mi RAM combined.
 > No resource-saving tricks needed this module.
 
+### Two Repos: App Code vs. GitOps Config
+
+Finoxa actually lives across two GitHub repos, and it's worth knowing why before we deploy anything:
+
+| Repo | Holds | Changes when... | You'll edit it starting... |
+|---|---|---|---|
+| [`finoxa-argocd/finoxa-app`](https://github.com/finoxa-argocd/finoxa-app) | Service source code, Dockerfiles | The application itself changes | Module 6 (CI) |
+| [`finoxa-argocd/gitops`](https://github.com/finoxa-argocd/gitops) | Kubernetes manifests, the `Application` resource | The *desired state of the cluster* changes | **This module** |
+
+This is a standard "app repo vs. config repo" split used by most real GitOps
+teams: an image build never has to touch a manifest, and a manifest edit
+never has to touch application code. Everything you do for the rest of this
+module — and every Git push in the labs going forward — happens in your fork
+of **`gitops`**, not `finoxa-app`.
+
+**Fork it now:** open https://github.com/finoxa-argocd/gitops and click
+**Fork**. Then clone your fork locally — you'll be editing files in it
+throughout this lab.
+
 ---
 
 ## 1. The `Application` Resource — ArgoCD's Core Building Block
@@ -63,7 +82,7 @@ metadata:
 spec:
   project: default           # Which AppProject this belongs to (default for now — Module 10 covers custom projects)
   source:
-    repoURL: https://github.com/finoxa-argocd/finoxa-app.git
+    repoURL: https://github.com/finoxa-argocd/gitops.git
     targetRevision: main     # Branch, tag, or commit SHA to track
     path: k8s/plain-manifests
     directory:
@@ -78,6 +97,7 @@ spec:
 
 A few things worth noticing:
 - `destination.server: https://kubernetes.default.svc` is a special value meaning "the cluster ArgoCD itself is running in" — you'll use a different value here once we add a second cluster in Module 11
+- `repoURL` points at the **`gitops`** repo, not `finoxa-app` — see "Two Repos" above
 - `source.path: k8s/plain-manifests` points at a folder containing **one subfolder per service** (`dashboard/`, `accounts-service/`, and later `insurance-service/`, `investments-service/`, `loans-service/` as we add them), each holding a `deployment.yaml` and `service.yaml`
 - `directory.recurse: true` tells ArgoCD to walk into those subfolders rather than stopping at the top level. Without it, ArgoCD would find zero YAML files directly in `k8s/plain-manifests/` and deploy nothing
 - `CreateNamespace=true` is a small but handy sync option — without it, ArgoCD would fail to sync into a namespace that doesn't exist yet
@@ -148,7 +168,9 @@ flowchart LR
 
 ### Step 1 — Create the Application (declarative approach)
 
-Save this as `finoxa-app.yaml`:
+Save this as `finoxa-app.yaml`. Replace `repoURL` with **your own fork** of
+`gitops` (e.g. `https://github.com/<your-username>/gitops.git`) — this is
+what makes Steps 6-8 later in this lab actually push-able:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -159,7 +181,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/finoxa-argocd/finoxa-app.git
+    repoURL: https://github.com/<your-username>/gitops.git
     targetRevision: main
     path: k8s/plain-manifests
     directory:

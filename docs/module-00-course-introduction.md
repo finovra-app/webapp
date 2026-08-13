@@ -81,8 +81,8 @@ never used `kubectl` or committed to a Git repo before, do that first.
 - Docker Desktop (or Docker Engine on Linux)
 - Basic familiarity with Kubernetes (Pods, Deployments) and Git — Module 1
   assumes you know what these are, not how to master them
-- A GitHub account (free) — you'll fork the [Finoxa repo](https://github.com/finoxa-argocd/finoxa-app)
-  in Module 4 to practice the GitOps commit loop yourself
+- A GitHub account (free) — you'll fork the [Finoxa GitOps repo](https://github.com/finoxa-argocd/gitops)
+  in Module 3 to practice the GitOps commit loop yourself
 - Nothing else yet — Module 2 walks you through installing `kind`, `kubectl`,
   `helm`, and ArgoCD itself from scratch
 
@@ -94,7 +94,7 @@ never used `kubectl` or committed to a Git repo before, do that first.
 running, and an agent *inside* your cluster continuously pulls and applies
 that state — nothing outside the cluster ever pushes into it. **ArgoCD** is
 that agent: a Kubernetes controller that watches a Git repo (like the Finoxa
-repo you'll fork) and keeps your cluster in sync with it. Module 1 covers
+GitOps repo you'll fork) and keeps your cluster in sync with it. Module 1 covers
 both in full depth — this is just enough to orient you.
 
 ## Where ArgoCD Fits in CI/CD
@@ -113,7 +113,8 @@ makes your take on ArgoCD practical rather than theoretical.]_
 
 ## Resources, Course Repo & Getting Help
 
-- **Course repo (code + these module docs):** https://github.com/finoxa-argocd/finoxa-app
+- **Course repo (app code, Dockerfiles + these module docs):** https://github.com/finoxa-argocd/finoxa-app
+- **GitOps repo (Kubernetes manifests + Application definitions — this is the one you'll fork):** https://github.com/finoxa-argocd/gitops
 - **Pre-built images:** [hub.docker.com/u/arsr319](https://hub.docker.com/u/arsr319) — every `finoxa-*` image referenced in this course
 - **Questions during the course:** _[Udemy Q&A / Discord / email — fill in your preferred support channel]_
 
