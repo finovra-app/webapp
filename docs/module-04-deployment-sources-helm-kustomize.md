@@ -1,6 +1,6 @@
 # Module 4: Deployment Sources — Helm & Kustomize
 
-**Duration:** 45 min
+**Duration:** 1 hr
 **Environment:** `kind` (local)
 **Prerequisites:** Module 3 complete — Finovra deployed and `Synced`/`Healthy` via plain YAML
 
@@ -11,7 +11,7 @@
 By the end of this module, you should be able to:
 - Explain the three ways ArgoCD can source manifests: plain YAML, Helm, and Kustomize
 - Deploy Finovra via its Helm chart, and override values through the `Application` spec — both a values file and an ad-hoc parameter
-- Render Finovra via a Kustomize base and explain what it changes without touching the original YAML
+- Deploy Finovra via a Kustomize overlay that patches one field on one resource, and explain why that avoids duplicating manifests across environments
 - Make an informed call on which source type fits a given team or project
 
 *(Jsonnet/Ksonnet exists as a fourth option but sees very little real-world adoption today — we're skipping it entirely, per this course's real-world-first philosophy.)*
@@ -109,9 +109,11 @@ spec:
 
 ---
 
-## 3. Kustomize: Base + Transformers, No Templating Language
+## 3. Kustomize: Base + Overlays, No Templating Language
 
-Finovra's Kustomize base lives at `kustomize/base/` — a self-contained copy of the same manifests plus one `kustomization.yaml`:
+Finovra's Kustomize setup has two layers — a **base** (the shared manifests) and an **overlay** (environment-specific tweaks layered on top), which is the actual reason teams reach for Kustomize in the first place.
+
+`kustomize/base/` is a self-contained copy of the same manifests plus one `kustomization.yaml`:
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -128,6 +130,35 @@ labels:
       managed-by: kustomize
     includeSelectors: false
 ```
+
+On its own, that's not very interesting — it's the same manifests plus one label. The actual value shows up once you **overlay** something on top of it. `kustomize/overlays/dev/` does exactly that: it takes the base as-is and patches one field on one resource, without touching the base at all:
+
+```yaml
+# kustomize/overlays/dev/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: dashboard-replicas-patch.yaml
+    target:
+      kind: Deployment
+      name: dashboard
+```
+
+```yaml
+# kustomize/overlays/dev/dashboard-replicas-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+spec:
+  replicas: 2
+```
+
+**This is when Kustomize actually earns its keep:** imagine `staging` needs `dashboard` at 2 replicas but every backend stays at 1, while `prod` needs different resource limits across the board. With plain YAML you'd maintain three full copies of every manifest. With Kustomize, you maintain **one base** and a handful of small overlay folders, each containing only the fields that differ for that environment — everything else is inherited untouched. That's the whole pitch: no duplication, no templating language, just "here's the base, here's what's different here."
 
 > **Why a self-contained base, not a pointer back at `k8s/plain-manifests/`?** Kustomize refuses by default to read files outside the directory it's building from — a deliberate security boundary. A base is meant to stand alone; overlays are what reference *it*, not the other way around.
 
@@ -288,15 +319,51 @@ You should see `arsr319/finovra-dashboard:1.0.1` — the practice-broken build f
 
 **Revert:** delete the `helm:` block from `finovra.yaml`, reapply. Confirm you're back to `1.0.0` and `Health Status: Healthy`.
 
-### Step 6 — Render the Kustomize base (no redeploy needed)
+### Step 6 — Deploy the Kustomize overlay
+
+First render it locally to see exactly what you're about to apply:
 
 ```bash
-kubectl kustomize kustomize/base | grep -A2 "labels:"
+kubectl kustomize kustomize/overlays/dev
 ```
 
-Confirm `managed-by: kustomize` is stamped onto every resource, and that everything else matches the plain YAML. This module's graded lab is the Helm conversion above — Kustomize overlays get their hands-on moment in Module 9 (Promotion), once there's an actual dev/staging split to justify one.
+Confirm `dashboard` shows `replicas: 2` while the other four Deployments stay at `1`, and every resource carries the `managed-by: kustomize` label — the overlay inherited that from the base without redeclaring it.
 
-**Checkpoint:** you converted a live Application from plain YAML to Helm with zero change in what's running, demonstrated both override mechanisms and reverted each cleanly, and confirmed the Kustomize base renders an equivalent (plus one label) without ever writing `{{ }}` anywhere.
+Now point your Application at it — `source.path` changes to `kustomize/overlays/dev`, same as switching to `helm-chart` did in Step 2, and there's no `helm:` block this time:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-username>/gitops.git
+    targetRevision: main
+    path: kustomize/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+```bash
+kubectl apply -f finovra.yaml
+kubectl get deployment dashboard -n finovra -w
+```
+
+Watch `dashboard` scale to `2/2` — deployed for real this time, through ArgoCD, from an overlay that never touched the base manifests. `kubectl get deployment dashboard -n finovra -o jsonpath='{.metadata.labels}'` should also show `managed-by: kustomize`.
+
+**Revert before continuing:** set `source.path` back to `k8s/plain-manifests` and re-add `directory: recurse: true` under it, reapply, and confirm `dashboard` settles back to `1/1` with no `managed-by` label.
+
+**Checkpoint:** you converted the same live Application through all three source types this module — plain YAML → Helm → Kustomize overlay — with the app staying `Synced`/`Healthy` throughout, and you've now seen Kustomize patch one field on one resource without duplicating or templating anything.
 
 ---
 
@@ -309,7 +376,9 @@ Confirm `managed-by: kustomize` is stamped onto every resource, and that everyth
 | **`source.helm.valueFiles`** | Application-level list of additional values files layered on top of the chart's defaults |
 | **`source.helm.parameters`** | Application-level list of single ad-hoc value overrides, equivalent to `helm --set` |
 | **Kustomize base** | A self-contained, plain-YAML directory that overlays are built on top of |
-| **Kustomize transformer** | An operation (labels, patches, images, etc.) Kustomize applies to a base — never templating, always structural |
+| **Kustomize overlay** | A directory that references a base and layers environment-specific patches/labels on top, without editing the base |
+| **Kustomize patch** | A targeted change to one field on one resource — Finovra's `dev` overlay patches only `dashboard`'s `replicas` |
+| **Kustomize transformer** | An operation (labels, patches, images, etc.) Kustomize applies to a base or overlay — never templating, always structural |
 
 ---
 
@@ -318,7 +387,9 @@ Confirm `managed-by: kustomize` is stamped onto every resource, and that everyth
 1. Why does the Helm chart's image-tag logic fall back to a global `.Values.image.tag` instead of requiring every service to set its own tag explicitly?
 2. What's the practical difference between `source.helm.valueFiles` and `source.helm.parameters` — when would you reach for each?
 3. Why does Kustomize's base at `kustomize/base/` contain its own copies of the manifests instead of referencing `k8s/plain-manifests/` directly?
-4. In one sentence each: when would a team reach for Helm over Kustomize, and vice versa?
+4. The `dev` overlay's patch only mentions `dashboard` and only sets `replicas: 2`. Why did the other four Deployments still come out with the `managed-by: kustomize` label?
+5. If `staging` and `prod` both needed their own replica counts, what would you add to `kustomize/overlays/` — and what would you *not* need to touch?
+6. In one sentence each: when would a team reach for Helm over Kustomize, and vice versa?
 
 ---
 
