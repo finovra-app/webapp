@@ -167,7 +167,7 @@ flowchart LR
 
 ### Step 1 — Create the Application (declarative approach)
 
-Save this as `finovra-app.yaml`. Replace `repoURL` with **your own fork** of
+Save this as `finovra.yaml`. Replace `repoURL` with **your own fork** of
 `gitops` (e.g. `https://github.com/<your-username>/gitops.git`) — this is
 what makes Steps 6-8 later in this lab actually push-able:
 
@@ -196,7 +196,7 @@ spec:
 Apply it:
 
 ```bash
-kubectl apply -f finovra-app.yaml
+kubectl apply -f finovra.yaml
 ```
 
 ### Step 2 — Confirm it shows up (but isn't deployed yet)
@@ -278,10 +278,25 @@ We're deliberately doing this differently from how you might see it written else
 
 ### Step 6 — Feature 1: Automated Sync (on its own)
 
-Edit `finovra-app.yaml` to enable automated sync, with **no prune, no selfHeal yet**:
+Edit `finovra.yaml` to enable automated sync, with **no prune, no selfHeal yet** — only `spec.syncPolicy` changes from Step 1, everything else stays the same:
 
 ```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
 spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-username>/gitops.git
+    targetRevision: main
+    path: k8s/plain-manifests
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
   syncPolicy:
     automated: {}
     syncOptions:
@@ -291,7 +306,7 @@ spec:
 Reapply:
 
 ```bash
-kubectl apply -f finovra-app.yaml
+kubectl apply -f finovra.yaml
 ```
 
 Nothing visibly changes — the cluster already matches Git. The point of this step is what happens next.
@@ -356,7 +371,22 @@ You'll see `Sync Status: OutOfSync` — ArgoCD knows this ConfigMap shouldn't ex
 **After — turn on prune:**
 
 ```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
 spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-username>/gitops.git
+    targetRevision: main
+    path: k8s/plain-manifests
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
   syncPolicy:
     automated:
       prune: true
@@ -365,7 +395,7 @@ spec:
 ```
 
 ```bash
-kubectl apply -f finovra-app.yaml
+kubectl apply -f finovra.yaml
 argocd app get finovra
 kubectl get configmap finovra-prune-demo -n finovra
 ```
@@ -395,7 +425,22 @@ kubectl scale deployment accounts-service -n finovra --replicas=1
 **After — turn on self-heal:**
 
 ```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
 spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-username>/gitops.git
+    targetRevision: main
+    path: k8s/plain-manifests
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
   syncPolicy:
     automated:
       prune: true
@@ -405,7 +450,7 @@ spec:
 ```
 
 ```bash
-kubectl apply -f finovra-app.yaml
+kubectl apply -f finovra.yaml
 ```
 
 Now repeat the exact same drift:
@@ -419,7 +464,7 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 
 **Checkpoint:** `argocd app get finovra` shows `Sync Status: Synced` and `Health Status: Healthy`, and you've now watched the identical command (`kubectl scale --replicas=3`) produce two different outcomes — entirely because of one flag: `selfHeal`.
 
-> **💡 Debugging tip: trust the live object, not your local file.** A very common source of confusion: you edit `finovra-app.yaml` locally, but forget you already `kubectl apply`'d an earlier version — or you applied a change, then kept editing the file afterward without reapplying it. The file on your disk and the actual `Application` object running in the cluster can silently drift apart, and only one of them is actually in control. If ArgoCD is doing something you don't expect (like reverting a change you just made), always check what's *actually* running before assuming your local file is accurate:
+> **💡 Debugging tip: trust the live object, not your local file.** A very common source of confusion: you edit `finovra.yaml` locally, but forget you already `kubectl apply`'d an earlier version — or you applied a change, then kept editing the file afterward without reapplying it. The file on your disk and the actual `Application` object running in the cluster can silently drift apart, and only one of them is actually in control. If ArgoCD is doing something you don't expect (like reverting a change you just made), always check what's *actually* running before assuming your local file is accurate:
 > ```bash
 > kubectl get application finovra -n argocd -o yaml | grep -A5 "^  syncPolicy"
 > ```

@@ -169,20 +169,35 @@ Confirm it renders 5 Deployments + 5 Services with no errors, and every image ta
 
 ### Step 2 — Point your Application at the chart
 
-Edit your `finovra-app.yaml` (the same file from Module 3) — change `source.path` from `k8s/plain-manifests` to `helm-chart`, and drop `directory.recurse` (Helm doesn't use it):
+Edit your `finovra.yaml` (the same file from Module 3) to match this exactly — `source.path` changes from `k8s/plain-manifests` to `helm-chart`, and the `directory.recurse` block is gone entirely (Helm doesn't use it, and leaving it in is a common copy-paste mistake here):
 
 ```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
 spec:
+  project: default
   source:
     repoURL: https://github.com/<your-username>/gitops.git
     targetRevision: main
     path: helm-chart
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
 
 Apply it:
 
 ```bash
-kubectl apply -f finovra-app.yaml
+kubectl apply -f finovra.yaml
 ```
 
 ### Step 3 — Confirm nothing actually changes
@@ -196,10 +211,16 @@ kubectl get pods -n finovra
 
 ### Step 4 — Demo a values-file override
 
-Add `valueFiles` to your Application:
+Add a `helm.valueFiles` block under `source` — everything else in the file stays exactly as it was in Step 2:
 
 ```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
 spec:
+  project: default
   source:
     repoURL: https://github.com/<your-username>/gitops.git
     targetRevision: main
@@ -207,21 +228,38 @@ spec:
     helm:
       valueFiles:
         - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
 
 ```bash
-kubectl apply -f finovra-app.yaml
+kubectl apply -f finovra.yaml
 kubectl get deployment dashboard -n finovra -w
 ```
 
 Watch `dashboard` scale from `1/1` to `2/2` — `values-dev.yaml` only touches `dashboard.replicas`, so it's the only Deployment that changes. Press `Ctrl+C` once it settles.
 
-**Revert before continuing:** remove the `helm.valueFiles` block and reapply, so `dashboard` scales back to 1.
+**Revert before continuing:** delete the `helm:` block (both lines) from `finovra.yaml`, reapply, and confirm `dashboard` scales back down to 1.
 
 ### Step 5 — Demo an ad-hoc parameter override
 
+Same pattern — `finovra.yaml` unchanged except swapping last step's `helm:` block for this one:
+
 ```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
 spec:
+  project: default
   source:
     repoURL: https://github.com/<your-username>/gitops.git
     targetRevision: main
@@ -230,16 +268,25 @@ spec:
       parameters:
         - name: dashboard.image.tag
           value: "1.0.1"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
 
 ```bash
-kubectl apply -f finovra-app.yaml
+kubectl apply -f finovra.yaml
 kubectl get deployment dashboard -n finovra -o jsonpath='{.spec.template.spec.containers[0].image}'
 ```
 
 You should see `arsr319/finovra-dashboard:1.0.1` — the practice-broken build from Module 6/7, deployed here just to prove the override mechanism works. Don't bother opening the browser; you already know what this one does.
 
-**Revert:** remove the `helm.parameters` block and reapply. Confirm you're back to `1.0.0` and `Health Status: Healthy`.
+**Revert:** delete the `helm:` block from `finovra.yaml`, reapply. Confirm you're back to `1.0.0` and `Health Status: Healthy`.
 
 ### Step 6 — Render the Kustomize base (no redeploy needed)
 
