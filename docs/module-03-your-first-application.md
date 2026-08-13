@@ -317,22 +317,13 @@ ArgoCD polls Git roughly every 3 minutes by default — you'll see the env var f
 
 > Revert this change afterward (`LATENCY_MS` back to `"0"`, commit, push) before moving on — Step 8 reuses `accounts-service` for a clean demo of its own.
 
-### Step 7 — Feature 2: Prune
+### Step 7 — Feature 2: Prune (with a before/after)
 
-Add `prune: true` to what you already have:
+Same style as we'll use again in Step 8: see it fail to clean up first, then turn on the setting that fixes it.
 
-```yaml
-spec:
-  syncPolicy:
-    automated:
-      prune: true
-    syncOptions:
-      - CreateNamespace=true
-```
+**Before — add and remove a resource without `prune`:**
 
-Reapply the Application and confirm nothing changes yet — same reasoning as Step 6, the cluster already matches Git.
-
-**Demo it:** add a throwaway resource via Git, then remove it, and watch `prune` clean up after you.
+You already have `automated: {}` from Step 6. Leave `prune` off for now.
 
 1. Create a new file `k8s/plain-manifests/dashboard/prune-demo-configmap.yaml`:
    ```yaml
@@ -355,12 +346,34 @@ Reapply the Application and confirm nothing changes yet — same reasoning as St
    git commit -m "Remove prune demo ConfigMap"
    git push origin main
    ```
-4. Watch it disappear from the cluster on its own:
+4. Wait for the next automated sync (or hit refresh), then check both the Application and the ConfigMap:
    ```bash
-   kubectl get configmap finoxa-prune-demo -n finoxa -w
+   argocd app get finoxa
+   kubectl get configmap finoxa-prune-demo -n finoxa
    ```
 
-**Checkpoint:** the ConfigMap is gone, and you never ran `kubectl delete`. If `prune` had been left `false`, this ConfigMap would still be sitting in your cluster right now — Git says it shouldn't exist, but nothing ever told the cluster to remove it. That's an **orphaned resource**, and it's exactly what `prune: true` prevents.
+You'll see `Sync Status: OutOfSync` — ArgoCD knows this ConfigMap shouldn't exist anymore — but `kubectl get configmap` still finds it. Automated sync alone only *applies* what's in Git; it doesn't remove what Git no longer has. That's an **orphaned resource**: still running, un-tracked by Git, and nothing will clean it up until you tell ArgoCD it's allowed to.
+
+**After — turn on prune:**
+
+```yaml
+spec:
+  syncPolicy:
+    automated:
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+```bash
+kubectl apply -f finoxa-app.yaml
+argocd app get finoxa
+kubectl get configmap finoxa-prune-demo -n finoxa
+```
+
+Within seconds, the ConfigMap disappears and `Sync Status` flips back to `Synced` — no new Git push, no `kubectl delete`. Enabling `prune` was enough for ArgoCD to finish the cleanup it had been holding off on the whole time.
+
+**Checkpoint:** you've now seen the identical Git history (add ConfigMap, then remove it) produce two different cluster outcomes — an orphaned resource without `prune`, a clean cluster with it — entirely because of one flag.
 
 ### Step 8 — Feature 3: Self-Heal (with a before/after)
 
@@ -438,7 +451,7 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 1. What are the three things every `Application` resource must define?
 2. If `syncPolicy.automated` is left out entirely, what happens when you push a change to Git — does anything deploy automatically?
 3. Can an application be `Synced` and `Degraded` at the same time? Why or why not?
-4. In Step 7, why did the ConfigMap need `prune: true` specifically to get removed, when `automated` sync alone was already enough to *create* it back in Step 6?
+4. In Step 7, `automated` sync alone was enough to *create* the ConfigMap, but not enough to remove it once deleted from Git. Why the asymmetry?
 5. In Step 8, the exact same `kubectl scale --replicas=3` command produced two different outcomes. What changed between the "before" and "after," and why?
 6. Why do Insurance, Investments, and Loans show "Coming Soon" instead of erroring or crashing the Application's health status?
 7. What's the difference between what the UI's "Diff" view shows you and what the "resource tree" shows you?
