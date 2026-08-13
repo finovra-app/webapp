@@ -73,6 +73,8 @@ image: "{{ .Values.image.repository }}/finovra-accounts-service:{{ (index .Value
 
 That `| default .Values.image.tag` pattern is deliberate: every service falls back to one global `image.tag` in `values.yaml`, but any service can be overridden **individually** — which matters a lot for Finovra specifically, since only the `dashboard` actually moves version-to-version. You'll never need to bump all five services just to ship a dashboard change.
 
+> **This is one chart-organization pattern, not "the" pattern.** Finovra uses one umbrella chart with all five services templated inside it, sharing a single `values.yaml` — that fits because one team owns the whole app and every service deploys together. Once services have **independent teams and independent release cadences**, most real orgs split instead: either a separate chart per service (each with its own per-environment values files, e.g. `dev/dashboard-values.yaml`, `dev/payment-values.yaml`), or a parent chart with each service as a **subchart** (`charts/dashboard/`, `charts/accounts-service/`, each with its own `values.yaml`, overridable from the parent). Neither is more "correct" — it's a team-topology decision, not a Helm best practice you're missing. The per-service-chart pattern is also exactly what Module 10 (ApplicationSets) generates automatically, one Application per service, once that independence is real.
+
 ### Values files vs. ad-hoc parameters
 
 Two different ways to override the defaults, both useful in different situations:
