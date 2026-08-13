@@ -25,8 +25,8 @@ app.get("/policies", async (req, res, next) => {
     }
     res.status(200).json({
       policies: [
-        { type: "Auto", provider: "Finoxa Auto Shield", premium: 89.5, renewalDate: "2027-01-15" },
-        { type: "Home", provider: "Finoxa Home Guard", premium: 145.0, renewalDate: "2026-11-02" },
+        { type: "Auto", provider: "Finovra Auto Shield", premium: 89.5, renewalDate: "2027-01-15" },
+        { type: "Home", provider: "Finovra Home Guard", premium: 145.0, renewalDate: "2026-11-02" },
       ],
     });
   } catch (err) {

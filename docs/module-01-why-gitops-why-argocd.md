@@ -119,7 +119,7 @@ It's not a CI tool, not a build tool, and not a general-purpose automation tool 
 
 ## 6. A Realistic Example Walkthrough
 
-Say your team wants to ship a new release of Finoxa's `accounts-service` — the balance/transactions tile you met in Module 0. Here's what actually happens end to end:
+Say your team wants to ship a new release of Finovra's `accounts-service` — the balance/transactions tile you met in Module 0. Here's what actually happens end to end:
 
 1. A developer merges a PR that updates the image tag in the manifests repo:
 
@@ -128,7 +128,7 @@ Say your team wants to ship a new release of Finoxa's `accounts-service` — the
 spec:
   containers:
     - name: accounts-service
-      image: arsr319/finoxa-accounts-service:1.0.0
+      image: arsr319/finovra-accounts-service:1.0.0
 ```
 
 ```yaml
@@ -136,7 +136,7 @@ spec:
 spec:
   containers:
     - name: accounts-service
-      image: arsr319/finoxa-accounts-service:2.0.0
+      image: arsr319/finovra-accounts-service:2.0.0
 ```
 
 2. ArgoCD's reconciliation loop (running inside the cluster) notices the Git state no longer matches the cluster's live state
@@ -157,7 +157,7 @@ You'll do exactly this — for real, against your own fork — starting in Modul
 | **Reconciliation loop** | The continuous process of comparing desired vs. actual state and correcting differences |
 | **Drift** | Any difference between desired state (Git) and actual state (cluster) |
 | **Sync** | The act of applying Git's desired state to the cluster |
-| **Application** | ArgoCD's core resource representing "this Git source, deployed to this cluster/namespace" (we'll build our first one in Module 3, deploying Finoxa) |
+| **Application** | ArgoCD's core resource representing "this Git source, deployed to this cluster/namespace" (we'll build our first one in Module 3, deploying Finovra) |
 
 ---
 

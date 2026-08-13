@@ -1,4 +1,4 @@
-# Finoxa
+# Finovra
 
 A demo personal finance dashboard built for the ArgoCD/GitOps Udemy course.
 Each backend "product" (accounts, investments, insurance, loans) shows up as a
@@ -8,8 +8,8 @@ tile on the `dashboard` frontend.
 Kustomize overlays, CI workflow, and build script are not built yet.
 
 > Kubernetes manifests and the ArgoCD `Application` definition live in a
-> separate repo: [`finoxa-argocd/gitops`](https://github.com/finoxa-argocd/gitops)
-> — this repo (`finoxa-app`) holds only application source code and
+> separate repo: [`finovra-app/gitops`](https://github.com/finovra-app/gitops)
+> — this repo (`webapp`) holds only application source code and
 > Dockerfiles. See Module 3 for why.
 
 ## Versioning
@@ -29,7 +29,7 @@ regardless of version — a service with no running container just times out and
 renders greyed-out with "Coming Soon" instead of being omitted. That's what
 makes the version-to-version diff visible to a viewer.
 
-Every image is published to Docker Hub as `arsr319/finoxa-<service>:<version>`.
+Every image is published to Docker Hub as `arsr319/finovra-<service>:<version>`.
 Because it's lockstep, most tags across versions point at byte-identical
 images (e.g. `accounts-service` hasn't changed since `1.0.0`, but is still
 tagged `2.0.0`/`3.0.0`/`4.0.0`) — a deliberate simplification for this
@@ -54,14 +54,14 @@ everything.
 
 ```bash
 cd deploy
-docker compose -p finoxa-v1 -f docker-compose.v1.yml up -d   # Accounts only
-docker compose -p finoxa-v2 -f docker-compose.v2.yml up -d   # + Insurance
-docker compose -p finoxa-v3 -f docker-compose.v3.yml up -d   # + Investments
-docker compose -p finoxa-v4 -f docker-compose.v4.yml up -d   # + Loans
+docker compose -p finovra-v1 -f docker-compose.v1.yml up -d   # Accounts only
+docker compose -p finovra-v2 -f docker-compose.v2.yml up -d   # + Insurance
+docker compose -p finovra-v3 -f docker-compose.v3.yml up -d   # + Investments
+docker compose -p finovra-v4 -f docker-compose.v4.yml up -d   # + Loans
 ```
 
 All four share host port 8082, so bring one down before starting the next:
 
 ```bash
-docker compose -p finoxa-v1 -f docker-compose.v1.yml down
+docker compose -p finovra-v1 -f docker-compose.v1.yml down
 ```

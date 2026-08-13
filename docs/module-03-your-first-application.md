@@ -10,7 +10,7 @@
 
 By the end of this module, you should be able to:
 - Explain every field in an ArgoCD `Application` resource
-- Deploy Finoxa into your cluster through ArgoCD
+- Deploy Finovra into your cluster through ArgoCD
 - Understand the difference between manual and automated sync
 - Explain what Prune and Self-Heal actually do, and demonstrate each in isolation
 - Read an application's sync status and health status correctly
@@ -18,9 +18,9 @@ By the end of this module, you should be able to:
 
 ---
 
-## About Our Demo App: Finoxa
+## About Our Demo App: Finovra
 
-You met Finoxa in Module 0: a small demo fintech app where each backend
+You met Finovra in Module 0: a small demo fintech app where each backend
 "product" (accounts, insurance, investments, loans) shows up as a tile. It
 ships as four whole-app releases — `1.0.0` through `4.0.0` — each unlocking
 exactly one more tile. In this module we deploy **v1.0.0**: just `dashboard`
@@ -34,20 +34,20 @@ in later modules, the same way a real team ships features incrementally.
 
 ### Two Repos: App Code vs. GitOps Config
 
-Finoxa actually lives across two GitHub repos, and it's worth knowing why before we deploy anything:
+Finovra actually lives across two GitHub repos, and it's worth knowing why before we deploy anything:
 
 | Repo | Holds | Changes when... | You'll edit it starting... |
 |---|---|---|---|
-| [`finoxa-argocd/finoxa-app`](https://github.com/finoxa-argocd/finoxa-app) | Service source code, Dockerfiles | The application itself changes | Module 6 (CI) |
-| [`finoxa-argocd/gitops`](https://github.com/finoxa-argocd/gitops) | Kubernetes manifests, the `Application` resource | The *desired state of the cluster* changes | **This module** |
+| [`finovra-app/webapp`](https://github.com/finovra-app/webapp) | Service source code, Dockerfiles | The application itself changes | Module 6 (CI) |
+| [`finovra-app/gitops`](https://github.com/finovra-app/gitops) | Kubernetes manifests, the `Application` resource | The *desired state of the cluster* changes | **This module** |
 
 This is a standard "app repo vs. config repo" split used by most real GitOps
 teams: an image build never has to touch a manifest, and a manifest edit
 never has to touch application code. Everything you do for the rest of this
 module — and every Git push in the labs going forward — happens in your fork
-of **`gitops`**, not `finoxa-app`.
+of **`gitops`**, not `webapp`.
 
-**Fork it now:** open https://github.com/finoxa-argocd/gitops and click
+**Fork it now:** open https://github.com/finovra-app/gitops and click
 **Fork**. Then clone your fork locally — you'll be editing files in it
 throughout this lab.
 
@@ -71,25 +71,25 @@ flowchart LR
     Dest -->|deploys to| Cluster[(Target Cluster/Namespace)]
 ```
 
-Here's a minimal, fully commented example using Finoxa:
+Here's a minimal, fully commented example using Finovra:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: finoxa               # This is the name you'll see in the UI/CLI
+  name: finovra               # This is the name you'll see in the UI/CLI
   namespace: argocd          # Applications always live in the argocd namespace itself
 spec:
   project: default           # Which AppProject this belongs to (default for now — Module 10 covers custom projects)
   source:
-    repoURL: https://github.com/finoxa-argocd/gitops.git
+    repoURL: https://github.com/finovra-app/gitops.git
     targetRevision: main     # Branch, tag, or commit SHA to track
     path: k8s/plain-manifests
     directory:
       recurse: true          # Pick up every service folder under this path
   destination:
     server: https://kubernetes.default.svc   # "This same cluster" — ArgoCD's own cluster
-    namespace: finoxa        # Namespace to deploy into
+    namespace: finovra        # Namespace to deploy into
   syncPolicy:
     syncOptions:
       - CreateNamespace=true # Let ArgoCD create the namespace if it doesn't exist
@@ -97,7 +97,7 @@ spec:
 
 A few things worth noticing:
 - `destination.server: https://kubernetes.default.svc` is a special value meaning "the cluster ArgoCD itself is running in" — you'll use a different value here once we add a second cluster in Module 11
-- `repoURL` points at the **`gitops`** repo, not `finoxa-app` — see "Two Repos" above
+- `repoURL` points at the **`gitops`** repo, not `webapp` — see "Two Repos" above
 - `source.path: k8s/plain-manifests` points at a folder containing **one subfolder per service** (`dashboard/`, `accounts-service/`, and later `insurance-service/`, `investments-service/`, `loans-service/` as we add them), each holding a `deployment.yaml` and `service.yaml`
 - `directory.recurse: true` tells ArgoCD to walk into those subfolders rather than stopping at the top level. Without it, ArgoCD would find zero YAML files directly in `k8s/plain-manifests/` and deploy nothing
 - `CreateNamespace=true` is a small but handy sync option — without it, ArgoCD would fail to sync into a namespace that doesn't exist yet
@@ -164,11 +164,11 @@ flowchart LR
 
 ---
 
-## Lab: Deploy Finoxa v1.0.0
+## Lab: Deploy Finovra v1.0.0
 
 ### Step 1 — Create the Application (declarative approach)
 
-Save this as `finoxa-app.yaml`. Replace `repoURL` with **your own fork** of
+Save this as `finovra-app.yaml`. Replace `repoURL` with **your own fork** of
 `gitops` (e.g. `https://github.com/<your-username>/gitops.git`) — this is
 what makes Steps 6-8 later in this lab actually push-able:
 
@@ -176,7 +176,7 @@ what makes Steps 6-8 later in this lab actually push-able:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: finoxa
+  name: finovra
   namespace: argocd
 spec:
   project: default
@@ -188,7 +188,7 @@ spec:
       recurse: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: finoxa
+    namespace: finovra
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
@@ -197,36 +197,36 @@ spec:
 Apply it:
 
 ```bash
-kubectl apply -f finoxa-app.yaml
+kubectl apply -f finovra-app.yaml
 ```
 
 ### Step 2 — Confirm it shows up (but isn't deployed yet)
 
 ```bash
-argocd app get finoxa
+argocd app get finovra
 ```
 
 You should see `Sync Status: OutOfSync` and `Health Status: Missing` — the Application exists, but since we haven't enabled `automated` sync, nothing has touched the cluster yet.
 
-You can also see this in the UI: open **https://localhost:8080**, and you should see a new `finoxa` tile, shown in yellow/orange (OutOfSync).
+You can also see this in the UI: open **https://localhost:8080**, and you should see a new `finovra` tile, shown in yellow/orange (OutOfSync).
 
 ### Step 3 — Manually sync it
 
 Via CLI:
 
 ```bash
-argocd app sync finoxa
+argocd app sync finovra
 ```
 
-Or via UI: click into the `finoxa` application and click **Sync → Synchronize**.
+Or via UI: click into the `finovra` application and click **Sync → Synchronize**.
 
-You should see 5 resources get created: the `finoxa` Namespace, two Services, and two Deployments (`dashboard`, `accounts-service`).
+You should see 5 resources get created: the `finovra` Namespace, two Services, and two Deployments (`dashboard`, `accounts-service`).
 
 ### Step 4 — Watch it become healthy
 
 ```bash
-argocd app get finoxa
-kubectl get pods -n finoxa
+argocd app get finovra
+kubectl get pods -n finovra
 ```
 
 Wait until `Health Status: Healthy` and both Pods show `1/1 Running` — this takes seconds, not minutes, since we're only pulling two small images. In the UI, click into the application to see the **resource tree**: the Namespace, both Services, both Deployments, and their Pods, all green.
@@ -234,12 +234,12 @@ Wait until `Health Status: Healthy` and both Pods show `1/1 Running` — this ta
 ### Step 5 — See the app in your browser
 
 ```bash
-kubectl port-forward svc/dashboard -n finoxa 8082:3000
+kubectl port-forward svc/dashboard -n finovra 8082:3000
 ```
 
-Open **http://localhost:8082** — you should see the Finoxa header (v1.0.0) and **four tiles**: 💰 Accounts in green (`ok`), and Insurance/Investments/Loans greyed out with **"Coming Soon"**. That's expected — their manifests don't exist in `k8s/plain-manifests/` yet, so ArgoCD never created them, and the dashboard's `SERVICES` config lists all four regardless of what's actually deployed.
+Open **http://localhost:8082** — you should see the Finovra header (v1.0.0) and **four tiles**: 💰 Accounts in green (`ok`), and Insurance/Investments/Loans greyed out with **"Coming Soon"**. That's expected — their manifests don't exist in `k8s/plain-manifests/` yet, so ArgoCD never created them, and the dashboard's `SERVICES` config lists all four regardless of what's actually deployed.
 
-> **Note:** Finoxa has nothing to scale down here — both Pods together use about 200m CPU and 256Mi RAM. No resource-saving step needed this module.
+> **Note:** Finovra has nothing to scale down here — both Pods together use about 200m CPU and 256Mi RAM. No resource-saving step needed this module.
 
 ---
 
@@ -254,7 +254,7 @@ Now that you have one real Application to look at, it's worth a proper tour of t
    | Sync status icon | ✔ green = `Synced`, ⟳ orange = `OutOfSync` |
    | Health status color | Green heart = `Healthy`, blue spinner = `Progressing`, red heart = `Degraded`, grey = `Unknown`/`Missing` |
 
-2. **Click the `finoxa` tile → resource tree.** This is the actual object graph ArgoCD created: the Application node at top, flowing down to the Namespace, Deployments, the ReplicaSets each Deployment owns, the Pods each ReplicaSet owns, and the Services. Every node is colored by *its own* health — in a bigger app later in the course, this is how you'll spot exactly which one resource is unhealthy instead of guessing.
+2. **Click the `finovra` tile → resource tree.** This is the actual object graph ArgoCD created: the Application node at top, flowing down to the Namespace, Deployments, the ReplicaSets each Deployment owns, the Pods each ReplicaSet owns, and the Services. Every node is colored by *its own* health — in a bigger app later in the course, this is how you'll spot exactly which one resource is unhealthy instead of guessing.
 
 3. **Click the `accounts-service` Pod node** — a side panel opens with three tabs:
    - **Logs** — live-streamed container logs, same content as `kubectl logs`
@@ -279,7 +279,7 @@ We're deliberately doing this differently from how you might see it written else
 
 ### Step 6 — Feature 1: Automated Sync (on its own)
 
-Edit `finoxa-app.yaml` to enable automated sync, with **no prune, no selfHeal yet**:
+Edit `finovra-app.yaml` to enable automated sync, with **no prune, no selfHeal yet**:
 
 ```yaml
 spec:
@@ -292,7 +292,7 @@ spec:
 Reapply:
 
 ```bash
-kubectl apply -f finoxa-app.yaml
+kubectl apply -f finovra-app.yaml
 ```
 
 Nothing visibly changes — the cluster already matches Git. The point of this step is what happens next.
@@ -308,7 +308,7 @@ Nothing visibly changes — the cluster already matches Git. The point of this s
    ```
 3. Don't touch `kubectl` or `argocd`. Just watch:
    ```bash
-   kubectl get deployment accounts-service -n finoxa -o jsonpath='{.spec.template.spec.containers[0].env}' -w
+   kubectl get deployment accounts-service -n finovra -o jsonpath='{.spec.template.spec.containers[0].env}' -w
    ```
 
 ArgoCD polls Git roughly every 3 minutes by default — you'll see the env var flip to `250` on its own once it does. That's the entire "automated" behavior: **Git changed → cluster changed, with nothing in between.**
@@ -330,7 +330,7 @@ You already have `automated: {}` from Step 6. Leave `prune` off for now.
    apiVersion: v1
    kind: ConfigMap
    metadata:
-     name: finoxa-prune-demo
+     name: finovra-prune-demo
      labels:
        app: dashboard
    data:
@@ -338,7 +338,7 @@ You already have `automated: {}` from Step 6. Leave `prune` off for now.
    ```
 2. Commit and push. Wait for automated sync to pick it up (same ~3 min window as Step 6 — or click the UI's refresh icon if you don't want to wait), then confirm it exists:
    ```bash
-   kubectl get configmap finoxa-prune-demo -n finoxa
+   kubectl get configmap finovra-prune-demo -n finovra
    ```
 3. Now delete the file from the repo entirely, and push that too:
    ```bash
@@ -348,8 +348,8 @@ You already have `automated: {}` from Step 6. Leave `prune` off for now.
    ```
 4. Wait for the next automated sync (or hit refresh), then check both the Application and the ConfigMap:
    ```bash
-   argocd app get finoxa
-   kubectl get configmap finoxa-prune-demo -n finoxa
+   argocd app get finovra
+   kubectl get configmap finovra-prune-demo -n finovra
    ```
 
 You'll see `Sync Status: OutOfSync` — ArgoCD knows this ConfigMap shouldn't exist anymore — but `kubectl get configmap` still finds it. Automated sync alone only *applies* what's in Git; it doesn't remove what Git no longer has. That's an **orphaned resource**: still running, un-tracked by Git, and nothing will clean it up until you tell ArgoCD it's allowed to.
@@ -366,9 +366,9 @@ spec:
 ```
 
 ```bash
-kubectl apply -f finoxa-app.yaml
-argocd app get finoxa
-kubectl get configmap finoxa-prune-demo -n finoxa
+kubectl apply -f finovra-app.yaml
+argocd app get finovra
+kubectl get configmap finovra-prune-demo -n finovra
 ```
 
 Within seconds, the ConfigMap disappears and `Sync Status` flips back to `Synced` — no new Git push, no `kubectl delete`. Enabling `prune` was enough for ArgoCD to finish the cleanup it had been holding off on the whole time.
@@ -382,15 +382,15 @@ This is the one worth seeing fail first, so the fix is unmistakable.
 **Before — try it without self-heal:**
 
 ```bash
-kubectl scale deployment accounts-service -n finoxa --replicas=3
-argocd app get finoxa
-kubectl get deployment accounts-service -n finoxa
+kubectl scale deployment accounts-service -n finovra --replicas=3
+argocd app get finovra
+kubectl get deployment accounts-service -n finovra
 ```
 
 You'll see `Sync Status: OutOfSync` — ArgoCD noticed the drift and is telling you about it — but the replica count **stays at 3**. Automated sync only reacts to *Git* changing; a manual `kubectl` change to something already deployed isn't something it corrects unless you ask it to. Scale it back down by hand before continuing:
 
 ```bash
-kubectl scale deployment accounts-service -n finoxa --replicas=1
+kubectl scale deployment accounts-service -n finovra --replicas=1
 ```
 
 **After — turn on self-heal:**
@@ -406,23 +406,23 @@ spec:
 ```
 
 ```bash
-kubectl apply -f finoxa-app.yaml
+kubectl apply -f finovra-app.yaml
 ```
 
 Now repeat the exact same drift:
 
 ```bash
-kubectl scale deployment accounts-service -n finoxa --replicas=3
-kubectl get deployment accounts-service -n finoxa -w
+kubectl scale deployment accounts-service -n finovra --replicas=3
+kubectl get deployment accounts-service -n finovra -w
 ```
 
 This time, within a few seconds, ArgoCD scales it back down to `1` on its own — no Git change, no further `kubectl`, no `argocd app sync`. Press `Ctrl+C` once it settles at `1/1`.
 
-**Checkpoint:** `argocd app get finoxa` shows `Sync Status: Synced` and `Health Status: Healthy`, and you've now watched the identical command (`kubectl scale --replicas=3`) produce two different outcomes — entirely because of one flag: `selfHeal`.
+**Checkpoint:** `argocd app get finovra` shows `Sync Status: Synced` and `Health Status: Healthy`, and you've now watched the identical command (`kubectl scale --replicas=3`) produce two different outcomes — entirely because of one flag: `selfHeal`.
 
-> **💡 Debugging tip: trust the live object, not your local file.** A very common source of confusion: you edit `finoxa-app.yaml` locally, but forget you already `kubectl apply`'d an earlier version — or you applied a change, then kept editing the file afterward without reapplying it. The file on your disk and the actual `Application` object running in the cluster can silently drift apart, and only one of them is actually in control. If ArgoCD is doing something you don't expect (like reverting a change you just made), always check what's *actually* running before assuming your local file is accurate:
+> **💡 Debugging tip: trust the live object, not your local file.** A very common source of confusion: you edit `finovra-app.yaml` locally, but forget you already `kubectl apply`'d an earlier version — or you applied a change, then kept editing the file afterward without reapplying it. The file on your disk and the actual `Application` object running in the cluster can silently drift apart, and only one of them is actually in control. If ArgoCD is doing something you don't expect (like reverting a change you just made), always check what's *actually* running before assuming your local file is accurate:
 > ```bash
-> kubectl get application finoxa -n argocd -o yaml | grep -A5 "^  syncPolicy"
+> kubectl get application finovra -n argocd -o yaml | grep -A5 "^  syncPolicy"
 > ```
 > This shows the real, live spec — independent of whatever your editor currently has open. It's one of the most useful single commands for debugging "why is ArgoCD doing this" questions throughout the rest of this course.
 
@@ -460,4 +460,4 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 
 ## What's Next
 
-In **Module 4**, we'll build on the automated sync you just watched work: adding `insurance-service` to the repo and pushing, and watching Finoxa go from v1.0.0 to v2.0.0 — the Insurance tile flipping from "Coming Soon" to live — with zero manual `kubectl` or `argocd` involvement.
+In **Module 4**, we'll build on the automated sync you just watched work: adding `insurance-service` to the repo and pushing, and watching Finovra go from v1.0.0 to v2.0.0 — the Insurance tile flipping from "Coming Soon" to live — with zero manual `kubectl` or `argocd` involvement.

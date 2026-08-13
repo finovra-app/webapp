@@ -8,12 +8,12 @@
 
 ## What You'll Build
 
-Across this course you'll deploy, break, roll back, and promote **Finoxa** — a
+Across this course you'll deploy, break, roll back, and promote **Finovra** — a
 small demo fintech app — a personal finance dashboard. It's not a production
 app with a real database; it exists so every GitOps concept in this course
 has something concrete and visual to happen to.
 
-Finoxa is 5 tiny microservices:
+Finovra is 5 tiny microservices:
 
 | Service | Language | What it does |
 |---|---|---|
@@ -44,14 +44,14 @@ flowchart LR
 
 Every arrow out of `dashboard` is independent — each backend can be deployed,
 broken, rolled back, or removed entirely without touching the others or the
-dashboard's own code. That independence is what makes Finoxa useful for
+dashboard's own code. That independence is what makes Finovra useful for
 practicing GitOps on: every operation you perform targets one Kubernetes
 Deployment/Service pair, with an immediate, visible effect on exactly one
 tile.
 
 ### The version story
 
-Finoxa ships four whole-app releases, each unlocking exactly one more tile:
+Finovra ships four whole-app releases, each unlocking exactly one more tile:
 
 | Version | Unlocks |
 |---|---|
@@ -61,8 +61,8 @@ Finoxa ships four whole-app releases, each unlocking exactly one more tile:
 | `4.0.0` | + Loans |
 
 Every image is already built and published for you on Docker Hub as
-`arsr319/finoxa-<service>:<version>` — for example
-`arsr319/finoxa-dashboard:2.0.0`. **You never need to build anything
+`arsr319/finovra-<service>:<version>` — for example
+`arsr319/finovra-dashboard:2.0.0`. **You never need to build anything
 yourself** until Module 6 (CI with GitHub Actions), where you'll finally look
 under the hood at how those images got there. Until then, every lab just
 points ArgoCD at a pre-built image tag.
@@ -81,7 +81,7 @@ never used `kubectl` or committed to a Git repo before, do that first.
 - Docker Desktop (or Docker Engine on Linux)
 - Basic familiarity with Kubernetes (Pods, Deployments) and Git — Module 1
   assumes you know what these are, not how to master them
-- A GitHub account (free) — you'll fork the [Finoxa GitOps repo](https://github.com/finoxa-argocd/gitops)
+- A GitHub account (free) — you'll fork the [Finovra GitOps repo](https://github.com/finovra-app/gitops)
   in Module 3 to practice the GitOps commit loop yourself
 - Nothing else yet — Module 2 walks you through installing `kind`, `kubectl`,
   `helm`, and ArgoCD itself from scratch
@@ -93,7 +93,7 @@ never used `kubectl` or committed to a Git repo before, do that first.
 **GitOps** means Git is the single source of truth for what should be
 running, and an agent *inside* your cluster continuously pulls and applies
 that state — nothing outside the cluster ever pushes into it. **ArgoCD** is
-that agent: a Kubernetes controller that watches a Git repo (like the Finoxa
+that agent: a Kubernetes controller that watches a Git repo (like the Finovra
 GitOps repo you'll fork) and keeps your cluster in sync with it. Module 1 covers
 both in full depth — this is just enough to orient you.
 
@@ -113,9 +113,9 @@ makes your take on ArgoCD practical rather than theoretical.]_
 
 ## Resources, Course Repo & Getting Help
 
-- **Course repo (app code, Dockerfiles + these module docs):** https://github.com/finoxa-argocd/finoxa-app
-- **GitOps repo (Kubernetes manifests + Application definitions — this is the one you'll fork):** https://github.com/finoxa-argocd/gitops
-- **Pre-built images:** [hub.docker.com/u/arsr319](https://hub.docker.com/u/arsr319) — every `finoxa-*` image referenced in this course
+- **Course repo (app code, Dockerfiles + these module docs):** https://github.com/finovra-app/webapp
+- **GitOps repo (Kubernetes manifests + Application definitions — this is the one you'll fork):** https://github.com/finovra-app/gitops
+- **Pre-built images:** [hub.docker.com/u/arsr319](https://hub.docker.com/u/arsr319) — every `finovra-*` image referenced in this course
 - **Questions during the course:** _[Udemy Q&A / Discord / email — fill in your preferred support channel]_
 
 ---

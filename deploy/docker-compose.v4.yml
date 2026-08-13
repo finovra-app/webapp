@@ -1,7 +1,7 @@
-# Finoxa v4.0.0 — Accounts + Insurance + Investments + Loans. Nothing greyed out.
+# Finovra v4.0.0 — Accounts + Insurance + Investments + Loans. Nothing greyed out.
 services:
   dashboard:
-    image: arsr319/finoxa-dashboard:4.0.0
+    image: arsr319/finovra-dashboard:4.0.0
     ports:
       - "8082:3000"
     environment:
@@ -15,7 +15,7 @@ services:
       - loans-service
 
   accounts-service:
-    image: arsr319/finoxa-accounts-service:4.0.0
+    image: arsr319/finovra-accounts-service:4.0.0
     environment:
       - PORT=8000
       - VERSION=4.0.0
@@ -23,7 +23,7 @@ services:
       - LATENCY_MS=0
 
   insurance-service:
-    image: arsr319/finoxa-insurance-service:4.0.0
+    image: arsr319/finovra-insurance-service:4.0.0
     environment:
       - PORT=8000
       - VERSION=4.0.0
@@ -31,7 +31,7 @@ services:
       - LATENCY_MS=0
 
   investments-service:
-    image: arsr319/finoxa-investments-service:4.0.0
+    image: arsr319/finovra-investments-service:4.0.0
     environment:
       - PORT=8000
       - VERSION=4.0.0
@@ -39,7 +39,7 @@ services:
       - LATENCY_MS=0
 
   loans-service:
-    image: arsr319/finoxa-loans-service:4.0.0
+    image: arsr319/finovra-loans-service:4.0.0
     environment:
       - PORT=8000
       - VERSION=4.0.0

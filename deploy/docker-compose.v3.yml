@@ -1,7 +1,7 @@
-# Finoxa v3.0.0 — Accounts + Insurance + Investments. Loans still "Coming Soon".
+# Finovra v3.0.0 — Accounts + Insurance + Investments. Loans still "Coming Soon".
 services:
   dashboard:
-    image: arsr319/finoxa-dashboard:3.0.0
+    image: arsr319/finovra-dashboard:3.0.0
     ports:
       - "8082:3000"
     environment:
@@ -14,7 +14,7 @@ services:
       - investments-service
 
   accounts-service:
-    image: arsr319/finoxa-accounts-service:3.0.0
+    image: arsr319/finovra-accounts-service:3.0.0
     environment:
       - PORT=8000
       - VERSION=3.0.0
@@ -22,7 +22,7 @@ services:
       - LATENCY_MS=0
 
   insurance-service:
-    image: arsr319/finoxa-insurance-service:3.0.0
+    image: arsr319/finovra-insurance-service:3.0.0
     environment:
       - PORT=8000
       - VERSION=3.0.0
@@ -30,7 +30,7 @@ services:
       - LATENCY_MS=0
 
   investments-service:
-    image: arsr319/finoxa-investments-service:3.0.0
+    image: arsr319/finovra-investments-service:3.0.0
     environment:
       - PORT=8000
       - VERSION=3.0.0
