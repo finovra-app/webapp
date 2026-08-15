@@ -135,7 +135,111 @@ All of this happens in your fork of `gitops`.
 
 ### Step 1 — Convert the dashboard to a Rollout
 
-Replace `k8s/plain-manifests/dashboard/deployment.yaml`'s content: change `kind: Deployment` to `kind: Rollout`, bump `replicas` to `2`, bump the image to `arsr319/finovra-dashboard:1.0.2` (and `VERSION` to match), add `FAIL_MODE: "false"` to `env`, and add the `strategy.canary` block from Section 3. Add the two canary/stable Service files and the `AnalysisTemplate` alongside it in the same folder.
+Replace `k8s/plain-manifests/dashboard/deployment.yaml`'s content with this in full — note **both** `apiVersion` and `kind` change at the top, not just `kind`: `Rollout` is a different CRD entirely, not a renamed `Deployment`, so leaving `apiVersion: apps/v1` in place will make the apply fail:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: dashboard
+  labels:
+    app: dashboard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: arsr319/finovra-dashboard:1.0.2
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: VERSION
+              value: "1.0.2"
+            - name: FAIL_MODE
+              value: "false"
+            - name: SERVICES
+              value: "accounts:http://accounts-service:8000,insurance:http://insurance-service:8000,investments:http://investments-service:8000,loans:http://loans-service:8000"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+  strategy:
+    canary:
+      canaryService: dashboard-canary
+      stableService: dashboard-stable
+      steps:
+        - setWeight: 50
+        - analysis:
+            templates:
+              - templateName: dashboard-healthz-check
+```
+
+Add two new files alongside it in the same `dashboard/` folder — `canary-services.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-canary
+spec:
+  selector:
+    app: dashboard
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-stable
+spec:
+  selector:
+    app: dashboard
+  ports:
+    - port: 3000
+      targetPort: 3000
+```
+
+and `analysistemplate.yaml`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: dashboard-healthz-check
+spec:
+  metrics:
+    - name: healthz-ok
+      interval: 10s
+      count: 3
+      successCondition: result == "ok"
+      provider:
+        web:
+          url: "http://dashboard-canary.finovra.svc.cluster.local:3000/healthz"
+          jsonPath: "{$.status}"
+```
 
 ```bash
 git add k8s/plain-manifests/dashboard/
