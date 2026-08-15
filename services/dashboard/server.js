@@ -4,6 +4,7 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const VERSION = process.env.VERSION || "dev";
+const FAIL_MODE = (process.env.FAIL_MODE || "false").toLowerCase() === "true";
 const SERVICES = parseServices(process.env.SERVICES || "");
 
 const ICONS = {
@@ -35,6 +36,16 @@ async function fetchJson(url) {
   if (!response.ok) throw new Error(`unexpected status ${response.status}`);
   return response.json();
 }
+
+// Separate from "/", which is just the static page and always 200s. This is
+// the endpoint deliberately capable of reporting real failure (FAIL_MODE) —
+// used by Argo Rollouts canary analysis, not by the Deployment's own probes.
+app.get("/healthz", (req, res) => {
+  if (FAIL_MODE) {
+    return res.status(500).json({ status: "fail" });
+  }
+  res.status(200).json({ status: "ok" });
+});
 
 // The dashboard polls each backend service server-side and exposes the result
 // on a single same-origin endpoint. The browser can't resolve internal service
@@ -69,5 +80,5 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => {
   const names = SERVICES.map((s) => s.name).join(", ") || "(none)";
-  console.log(`dashboard ${VERSION} listening on :${PORT}, tracking services: ${names}`);
+  console.log(`dashboard ${VERSION} listening on :${PORT}, tracking services: ${names} (FAIL_MODE=${FAIL_MODE})`);
 });
