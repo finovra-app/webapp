@@ -1,8 +1,10 @@
-# Module 5: Closing the Loop — CI with GitHub Actions
+# Reference: Closing the Loop — CI with GitHub Actions
+
+> **Status: not a numbered module.** Per the current syllabus, CI is covered inside the **Capstone** project instead of its own standalone module. This doc is kept as reference material — the underlying pipeline (`webapp/.github/workflows/dashboard-image.yml`), the `VERSION`-file convention, and `arsr319/finovra-dashboard:2.0.0` (the "What's New" panel build) all still exist and work, live-verified against the real cluster. Reuse this content when the Capstone module gets written — either directly against Finovra, or adapted for whichever Online Boutique service the Capstone ends up wiring CI to.
 
 **Duration:** 1 hr
 **Environment:** `kind` (local)
-**Prerequisites:** Module 4 complete — you've deployed Finovra via plain YAML, Helm, and Kustomize
+**Prerequisites:** Finovra deployed via plain YAML, Helm, and Kustomize (Modules 3-4)
 
 ---
 
@@ -227,6 +229,6 @@ Open **http://localhost:8082** — the header reads **v2.0.0**, and there's a ne
 
 ---
 
-## What's Next
+## Where This Fits Now
 
-In **Module 6**, we deploy a deliberately broken dashboard release — `1.0.1`, the practice-bad build from earlier in the course — and recover from it three different ways: native ArgoCD rollback, `git revert`, and pausing reconciliation during an incident.
+This content isn't currently slotted into a numbered module — see the status note at the top. The required path continues straight from Module 4 into **Module 5: Rollbacks & Failure Recovery**, which deploys a deliberately broken dashboard release (`1.0.1`, the practice-bad build already on Docker Hub) and recovers from it three different ways: native ArgoCD rollback, `git revert`, and pausing reconciliation during an incident.

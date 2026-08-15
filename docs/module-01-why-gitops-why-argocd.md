@@ -100,7 +100,7 @@ flowchart LR
 ```
 
 **The split:**
-- **CI** (GitHub Actions, in this course — Module 5): builds, tests, pushes container images, and updates a manifests repo with the new image tag
+- **CI** (GitHub Actions, in this course — covered in the Capstone project): builds, tests, pushes container images, and updates a manifests repo with the new image tag
 - **CD** (ArgoCD): watches that manifests repo and reconciles the cluster to match it
 
 This separation is deliberate — it means your CI system never needs cluster credentials at all.
@@ -142,7 +142,7 @@ spec:
 2. ArgoCD's reconciliation loop (running inside the cluster) notices the Git state no longer matches the cluster's live state
 3. ArgoCD pulls the new manifest and applies it — no one ran `kubectl apply` by hand, and no CI pipeline touched the cluster directly
 4. The new Pod rolls out, and ArgoCD's UI shows the sync status and health of the change
-5. If something goes wrong, the fix is a `git revert` on that same PR — not a scramble through pipeline logs (we'll cover this in depth in Module 6)
+5. If something goes wrong, the fix is a `git revert` on that same PR — not a scramble through pipeline logs (we'll cover this in depth in Module 5)
 
 You'll do exactly this — for real, against your own fork — starting in Module 3.
 

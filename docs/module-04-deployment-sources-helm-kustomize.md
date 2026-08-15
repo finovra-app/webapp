@@ -73,7 +73,7 @@ image: "{{ .Values.image.repository }}/finovra-accounts-service:{{ (index .Value
 
 That `| default .Values.image.tag` pattern is deliberate: every service falls back to one global `image.tag` in `values.yaml`, but any service can be overridden **individually** — which matters a lot for Finovra specifically, since only the `dashboard` actually moves version-to-version. You'll never need to bump all five services just to ship a dashboard change.
 
-> **This is one chart-organization pattern, not "the" pattern.** Finovra uses one umbrella chart with all five services templated inside it, sharing a single `values.yaml` — that fits because one team owns the whole app and every service deploys together. Once services have **independent teams and independent release cadences**, most real orgs split instead: either a separate chart per service (each with its own per-environment values files, e.g. `dev/dashboard-values.yaml`, `dev/payment-values.yaml`), or a parent chart with each service as a **subchart** (`charts/dashboard/`, `charts/accounts-service/`, each with its own `values.yaml`, overridable from the parent). Neither is more "correct" — it's a team-topology decision, not a Helm best practice you're missing. The per-service-chart pattern is also exactly what Module 10 (ApplicationSets) generates automatically, one Application per service, once that independence is real.
+> **This is one chart-organization pattern, not "the" pattern.** Finovra uses one umbrella chart with all five services templated inside it, sharing a single `values.yaml` — that fits because one team owns the whole app and every service deploys together. Once services have **independent teams and independent release cadences**, most real orgs split instead: either a separate chart per service (each with its own per-environment values files, e.g. `dev/dashboard-values.yaml`, `dev/payment-values.yaml`), or a parent chart with each service as a **subchart** (`charts/dashboard/`, `charts/accounts-service/`, each with its own `values.yaml`, overridable from the parent). Neither is more "correct" — it's a team-topology decision, not a Helm best practice you're missing. The per-service-chart pattern is also exactly what Module 8 (ApplicationSets) generates automatically, one Application per service, once that independence is real.
 
 ### Values files vs. ad-hoc parameters
 
@@ -89,7 +89,7 @@ Good for a standing set of overrides you'd reuse — e.g. "how dev always differ
 ```bash
 helm template finovra helm-chart --set dashboard.image.tag=1.0.1
 ```
-Good for a one-off — e.g. previewing what a specific release would render before committing to it. (`1.0.1` here is the practice-broken dashboard build from Module 6/7 — this is a dry render only, nothing gets applied to your cluster.)
+Good for a one-off — e.g. previewing what a specific release would render before committing to it. (`1.0.1` here is the practice-broken dashboard build from Module 5/6 — this is a dry render only, nothing gets applied to your cluster.)
 
 In an ArgoCD `Application`, both map directly onto `source.helm`:
 
@@ -181,7 +181,7 @@ Every resource comes out identical to the plain YAML, plus one thing: `labels.ku
 | Learning curve | Lowest | Steepest — Go template syntax | Low — just YAML |
 | Real-world share | Common for small internal apps | Dominant for anything published/shared (most public Helm charts) | Very common for internal environment overlays (dev/staging/prod) |
 
-There's no universally "correct" choice — plenty of real teams run all three for different apps in the same cluster. A rule of thumb: if you're **publishing** a chart for others to consume with varying needs, reach for Helm. If you're **layering your own environment differences** on top of one shared base, Kustomize tends to stay simpler longer. Module 9's promotion lab uses Kustomize overlays for exactly that reason.
+There's no universally "correct" choice — plenty of real teams run all three for different apps in the same cluster. A rule of thumb: if you're **publishing** a chart for others to consume with varying needs, reach for Helm. If you're **layering your own environment differences** on top of one shared base, Kustomize tends to stay simpler longer. Module 7's promotion lab uses Kustomize overlays for exactly that reason.
 
 ---
 
@@ -315,7 +315,7 @@ kubectl apply -f finovra.yaml
 kubectl get deployment dashboard -n finovra -o jsonpath='{.spec.template.spec.containers[0].image}'
 ```
 
-You should see `arsr319/finovra-dashboard:1.0.1` — the practice-broken build from Module 6/7, deployed here just to prove the override mechanism works. Don't bother opening the browser; you already know what this one does.
+You should see `arsr319/finovra-dashboard:1.0.1` — the practice-broken build from Module 5/6, deployed here just to prove the override mechanism works. Don't bother opening the browser; you already know what this one does.
 
 **Revert:** delete the `helm:` block from `finovra.yaml`, reapply. Confirm you're back to `1.0.0` and `Health Status: Healthy`.
 
@@ -395,4 +395,4 @@ Watch `dashboard` scale to `2/2` — deployed for real this time, through ArgoCD
 
 ## What's Next
 
-In **Module 5**, we finally look under the hood at how Finovra's images actually get built: a GitHub Actions workflow that builds a new `dashboard` image, pushes it to Docker Hub, and bumps the tag in `gitops` automatically — closing the loop between CI and the GitOps deployment you've been practicing since Module 3.
+In **Module 5**, we deploy a deliberately broken dashboard release and recover from it three different ways: native ArgoCD rollback, `git revert`, and pausing reconciliation during an incident. (Building your own images with CI is covered later, in the Capstone project.)

@@ -39,7 +39,7 @@ flowchart TB
 | **Repo Server** | Clones your Git repos and renders manifests (runs `helm template`, `kustomize build`, etc. internally). Never touches the live cluster directly. |
 | **Application Controller** | The reconciliation loop itself — continuously compares live cluster state to what the Repo Server rendered from Git, and triggers syncs. |
 | **Redis** | Caching layer — stores rendered manifests and cluster state to avoid re-computing on every reconciliation tick. |
-| **Dex** (optional) | Handles SSO/OIDC login (GitHub, Google, LDAP, etc.) — we'll cover what it solves in Module 9. |
+| **Dex** (optional) | Handles SSO/OIDC login (GitHub, Google, LDAP, etc.) — covered at concept level in the optional Running ArgoCD Safely module. |
 
 **Key insight:** notice that only the **Application Controller** talks to your actual workloads. The Repo Server only ever talks to Git — it has no cluster-write access. This separation is part of why ArgoCD's architecture is considered secure by design.
 
@@ -127,7 +127,7 @@ helm version
 
 ## 3. Creating Our Course Cluster
 
-Rather than using kind's bare defaults, we'll use a small config file — this makes our cluster reproducible and lets us name it clearly, which matters once you have multiple clusters around (we'll need a second one in Module 11).
+Rather than using kind's bare defaults, we'll use a small config file — this makes our cluster reproducible and lets us name it clearly, which matters once you have multiple clusters around (we'll need a second one in Module 9).
 
 Create a file called `kind-config.yaml`:
 

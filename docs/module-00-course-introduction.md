@@ -61,10 +61,9 @@ feature — not a new service, just like a real release usually does:
 | Version | Adds | Introduced in |
 |---|---|---|
 | `1.0.0` | Baseline dashboard, all four tiles live | Module 3 |
-| `2.0.0` | A "What's New" changelog panel — built via the CI pipeline itself | Module 5 (CI) |
-| `3.0.0` | Summary stats bar + a production-feel polish pass | Module 8 (Promotion) |
+| `2.0.0`+ | Further dashboard features (a "What's New" changelog panel, and more) as the course progresses | Later modules |
 
-Modules 6 and 7 (rollbacks and progressive delivery) use a separate,
+Modules 5 and 6 (rollbacks and progressive delivery) use a separate,
 one-off broken release — `arsr319/finovra-dashboard:1.0.1` — as practice
 material. It's deliberately off this roadmap: the whole point of those
 modules is recovering from it.
@@ -72,9 +71,10 @@ modules is recovering from it.
 Every image is already built and published for you on Docker Hub as
 `arsr319/finovra-<service>:<version>` — for example
 `arsr319/finovra-accounts-service:1.0.0`. **You never need to build anything
-yourself** until Module 5 (CI with GitHub Actions), where you'll finally look
-under the hood at how those images got there. Until then, every lab just
-points ArgoCD at a pre-built image tag.
+yourself** in the required path — CI (building an image yourself with GitHub
+Actions) is covered in the **Capstone** project instead, once you're working
+with a real pipeline end to end. Until then, every lab just points ArgoCD at
+a pre-built image tag.
 
 ---
 

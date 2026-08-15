@@ -37,7 +37,7 @@ Finovra actually lives across two GitHub repos, and it's worth knowing why befor
 
 | Repo | Holds | Changes when... | You'll edit it starting... |
 |---|---|---|---|
-| [`finovra-app/webapp`](https://github.com/finovra-app/webapp) | Service source code, Dockerfiles | The application itself changes | Module 5 (CI) |
+| [`finovra-app/webapp`](https://github.com/finovra-app/webapp) | Service source code, Dockerfiles | The application itself changes | The Capstone (CI) |
 | [`finovra-app/gitops`](https://github.com/finovra-app/gitops) | Kubernetes manifests, the `Application` resource | The *desired state of the cluster* changes | **This module** |
 
 This is a standard "app repo vs. config repo" split used by most real GitOps
@@ -79,7 +79,7 @@ metadata:
   name: finovra               # This is the name you'll see in the UI/CLI
   namespace: argocd          # Applications always live in the argocd namespace itself
 spec:
-  project: default           # Which AppProject this belongs to (default for now — Module 9 covers custom projects)
+  project: default           # Which AppProject this belongs to (default for now — the optional Running ArgoCD Safely module covers custom projects)
   source:
     repoURL: https://github.com/finovra-app/gitops.git
     targetRevision: main     # Branch, tag, or commit SHA to track
@@ -95,7 +95,7 @@ spec:
 ```
 
 A few things worth noticing:
-- `destination.server: https://kubernetes.default.svc` is a special value meaning "the cluster ArgoCD itself is running in" — you'll use a different value here once we add a second cluster in Module 11
+- `destination.server: https://kubernetes.default.svc` is a special value meaning "the cluster ArgoCD itself is running in" — you'll use a different value here once we add a second cluster in Module 9
 - `repoURL` points at the **`gitops`** repo, not `webapp` — see "Two Repos" above
 - `source.path: k8s/plain-manifests` points at a folder containing **one subfolder per service** — `dashboard/`, `accounts-service/`, `insurance-service/`, `investments-service/`, `loans-service/`, all five already there — each holding a `deployment.yaml` and `service.yaml`
 - `directory.recurse: true` tells ArgoCD to walk into those subfolders rather than stopping at the top level. Without it, ArgoCD would find zero YAML files directly in `k8s/plain-manifests/` and deploy nothing
@@ -121,7 +121,7 @@ spec:
 | Speed | Slower — someone has to notice and click | Fast — changes land within seconds of a Git push |
 | Risk | Lower — nothing changes without a human looking at it | Higher — a bad commit deploys immediately unless caught by CI first |
 
-Most real teams run **automated sync in dev/staging** and either **automated with strict CI gating** or **manual approval** in production — we'll build exactly this pattern in Module 8 (Promotion).
+Most real teams run **automated sync in dev/staging** and either **automated with strict CI gating** or **manual approval** in production — we'll build exactly this pattern in Module 7 (Promotion).
 
 ---
 
@@ -159,7 +159,7 @@ flowchart LR
 | **Sync Status** | "Does what's running match what's in Git?" | `Synced`, `OutOfSync`, `Unknown` |
 | **Health Status** | "Are the running resources actually healthy?" | `Healthy`, `Progressing`, `Degraded`, `Missing`, `Unknown` |
 
-**An application can be `Synced` and still `Degraded`** — Git and the cluster agree on what *should* be running, but a Pod is crash-looping. That's a completely valid (if unfortunate) state, and knowing this distinction will save you a lot of confusion when debugging later modules, especially Module 6 (rollbacks).
+**An application can be `Synced` and still `Degraded`** — Git and the cluster agree on what *should* be running, but a Pod is crash-looping. That's a completely valid (if unfortunate) state, and knowing this distinction will save you a lot of confusion when debugging later modules, especially Module 5 (rollbacks).
 
 ---
 
@@ -264,7 +264,7 @@ Now that you have one real Application to look at, it's worth a proper tour of t
    - **App Details** — the raw Application spec: source repoURL/path/targetRevision, destination, sync policy. Your fastest "what is this actually configured to do" check without leaving the UI.
    - **Diff** — compares live cluster state against Git, field by field. Empty diff = fully `Synced`.
    - **Sync** — opens a panel with checkboxes for Prune, Dry Run, and sync options — the same knobs we're about to set on the Application spec itself, but usable ad hoc for a single sync.
-   - **History and Rollback** — every past sync, with a one-click revert. We'll use this heavily in Module 6.
+   - **History and Rollback** — every past sync, with a one-click revert. We'll use this heavily in Module 5.
 
 5. **Refresh icon** — forces ArgoCD to immediately re-diff against Git instead of waiting for its normal reconciliation loop. We'll let the real timer run in the next few steps so you see genuinely automated behavior, but it's worth knowing this exists for when you don't want to wait.
 
@@ -477,7 +477,7 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 | Term | Meaning |
 |---|---|
 | **Application** | ArgoCD's core CRD — represents one deployable unit: a Git source + a destination + a sync policy |
-| **AppProject** | A grouping/permissions boundary for Applications (default for now, covered properly in Module 9) |
+| **AppProject** | A grouping/permissions boundary for Applications (default for now, covered properly in the optional Running ArgoCD Safely module) |
 | **Sync Status** | Whether live cluster state matches Git (`Synced` / `OutOfSync`) |
 | **Health Status** | Whether the deployed resources are actually working (`Healthy` / `Degraded` / etc.) |
 | **Prune** | Deletes cluster resources that were removed from Git |
@@ -485,7 +485,7 @@ This time, within a few seconds, ArgoCD scales it back down to `1` on its own �
 | **Resource tree** | The UI view showing every Kubernetes resource an Application owns and their relationships |
 | **`directory.recurse`** | Tells ArgoCD's directory source to walk into subfolders instead of only reading files at the top level of `source.path` |
 | **Diff view** | UI panel comparing live cluster state to Git, field by field — empty means fully `Synced` |
-| **History and Rollback** | UI tab listing every past sync with a one-click revert (Module 6) |
+| **History and Rollback** | UI tab listing every past sync with a one-click revert (Module 5) |
 | **Orphaned resource** | A resource still running in the cluster after being removed from Git — what `prune: true` cleans up automatically |
 
 ---
