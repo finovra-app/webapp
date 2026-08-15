@@ -360,9 +360,34 @@ kubectl get deployment dashboard -n finovra -w
 
 Watch `dashboard` scale to `2/2` — deployed for real this time, through ArgoCD, from an overlay that never touched the base manifests. `kubectl get deployment dashboard -n finovra -o jsonpath='{.metadata.labels}'` should also show `managed-by: kustomize`.
 
-**Revert before continuing:** set `source.path` back to `k8s/plain-manifests` and re-add `directory: recurse: true` under it, reapply, and confirm `dashboard` settles back to `1/1` with no `managed-by` label.
+**Revert before continuing — but not to plain YAML.** Set `source.path` back to `helm-chart` (drop the `helm:` block entirely, matching Step 3's clean state) and reapply. Confirm `dashboard` settles back to `1/1` with no `managed-by` label.
 
-**Checkpoint:** you converted the same live Application through all three source types this module — plain YAML → Helm → Kustomize overlay — with the app staying `Synced`/`Healthy` throughout, and you've now seen Kustomize patch one field on one resource without duplicating or templating anything.
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finovra
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<your-username>/gitops.git
+    targetRevision: main
+    path: helm-chart
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finovra
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+**Why Helm, not plain YAML, is where we land:** this is deliberate, not an oversight. Real teams that adopt Helm don't bounce back to raw manifests afterward — you pick a packaging approach and the rest of your releases build on it. From here through the rest of the course, **Helm is Finovra's ongoing baseline.** Kustomize was worth seeing work for real — you now know exactly what it's for and when you'd reach for it — but the app itself moves forward on the chart.
+
+**Checkpoint:** you converted the same live Application through all three source types this module — plain YAML → Helm → Kustomize overlay — with the app staying `Synced`/`Healthy` throughout, and you've landed on Helm as where Finovra stays for the rest of the course.
 
 ---
 
