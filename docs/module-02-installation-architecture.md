@@ -1,6 +1,5 @@
 # Module 2: Installation & Architecture
 
-**Duration:** 1 hr
 **Environment:** `kind` (local)
 **Prerequisites:** Docker installed and running; Module 1 concepts
 

@@ -2,7 +2,6 @@
 
 > **Status: not a numbered module.** Per the current syllabus, CI is covered inside the **Capstone** project instead of its own standalone module. This doc is kept as reference material — the underlying pipeline (`webapp/.github/workflows/dashboard-image.yml`), the `VERSION`-file convention, and `arsr319/finovra-dashboard:2.0.0` (the "What's New" panel build) all still exist and work, live-verified against the real cluster. Reuse this content when the Capstone module gets written — either directly against Finovra, or adapted for whichever Online Boutique service the Capstone ends up wiring CI to.
 
-**Duration:** 1 hr
 **Environment:** `kind` (local)
 **Prerequisites:** Finovra deployed via plain YAML, Helm, and Kustomize (Modules 3-4)
 

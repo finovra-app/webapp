@@ -1,6 +1,5 @@
 # Module 0: Course Introduction
 
-**Duration:** ~15-20 min (orientation — not counted in the course's technical hours)
 **Environment:** None — just read
 **Prerequisites:** None yet — this module tells you what you'll need before Module 2
 

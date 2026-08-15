@@ -1,6 +1,5 @@
 # Module 3: Your First Application
 
-**Duration:** 1.5 hrs
 **Environment:** `kind` (local)
 **Prerequisites:** Module 2 complete — ArgoCD installed and you're logged in via both UI and CLI
 

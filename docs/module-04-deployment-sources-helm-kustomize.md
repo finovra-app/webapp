@@ -1,6 +1,5 @@
 # Module 4: Deployment Sources — Helm & Kustomize
 
-**Duration:** 1 hr
 **Environment:** `kind` (local)
 **Prerequisites:** Module 3 complete — Finovra deployed and `Synced`/`Healthy` via plain YAML
 

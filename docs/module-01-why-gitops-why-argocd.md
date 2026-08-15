@@ -1,6 +1,5 @@
 # Module 1: Why GitOps, Why ArgoCD
 
-**Duration:** 45 min
 **Environment:** None (discussion only — no lab this module)
 **Prerequisites:** Module 0 complete; basic familiarity with Kubernetes (Pods, Deployments) and Git
 
