@@ -1,7 +1,7 @@
 # Module 5: Rollbacks & Failure Recovery
 
 **Environment:** `kind` (local)
-**Prerequisites:** Module 4 complete — Finovra deployed via plain YAML, with `automated`, `prune`, and `selfHeal` all enabled
+**Prerequisites:** Module 4 complete — Finovra deployed via its Helm chart, with `automated`, `prune`, and `selfHeal` all enabled
 
 ---
 
@@ -114,10 +114,21 @@ All of this happens in your fork of `gitops`.
 
 ### Step 1 — Deploy the bad release
 
-Edit `k8s/plain-manifests/dashboard/deployment.yaml`: bump both the image tag and the `VERSION` env var from `1.0.0` to `1.0.1`.
+Edit `helm-chart/values.yaml`: find the **`dashboard:`** block specifically and change its `image.tag` from `""` to `"1.0.1"`.
+
+```yaml
+dashboard:
+  replicas: 1
+  image:
+    tag: "1.0.1"   # was ""
+```
+
+**Change only this one line.** `accounts-service`, `insurance-service`, `investments-service`, and `loans-service` each have their own `image.tag: ""` line right below it in the same file — a blanket find-and-replace for `tag: ""` across the whole file will bump all five services instead of just `dashboard`, and the four backends don't have a `1.0.1` image on Docker Hub at all, so they'll go straight to `ImagePullBackOff`. Edit `dashboard`'s block by hand. One field, one service — that's the whole point of the fallback pattern from Module 4.
+
+Because the template derives both the image tag *and* the `VERSION` env var from this same field, this single line is enough — no second edit needed the way the old plain-YAML version required.
 
 ```bash
-git add k8s/plain-manifests/dashboard/deployment.yaml
+git add helm-chart/values.yaml
 git commit -m "Bump dashboard to 1.0.1"
 git push origin main
 ```
@@ -160,7 +171,7 @@ Watch `argocd app get finovra` settle to `Synced`/`Healthy` — this time genuin
 
 ### Step 4 — Redeploy the bad release, then recover by pausing
 
-Repeat Step 1 (bump to `1.0.1` again, commit, push, wait for sync).
+Repeat Step 1 (`dashboard.image.tag` back to `1.0.1` in `helm-chart/values.yaml`, commit, push, wait for sync).
 
 Try the *unprotected* emergency scale-down first, and watch it get reverted:
 
