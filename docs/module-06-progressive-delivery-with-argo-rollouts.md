@@ -18,38 +18,49 @@ By the end of this module, you should be able to:
 
 ## 1. Why Plain Sync Isn't Enough
 
-Every deploy so far has worked the same way: push a change, ArgoCD applies it to every Pod, and you find out afterward whether it was a good idea. Module 5 showed you exactly how bad "afterward" can be — `1.0.1` was `Healthy` by every signal ArgoCD had, and it was still broken.
+Every deploy so far has worked the same way: push a change, ArgoCD applies it to every Pod, and you find out afterward whether it was a good idea. We've already seen how bad "afterward" can be. A broken release can look completely `Healthy` to ArgoCD while it's actually broken for real users.
 
-**Argo Rollouts** changes the shape of a deploy: instead of replacing every Pod at once, a new release ships to a small subset of Pods first (the **canary**), gets checked automatically, and only proceeds to 100% if the check passes. If it fails, Argo Rollouts aborts on its own — the majority of traffic never touched the bad release at all.
+**Argo Rollouts** fixes this by changing the shape of a deploy:
+- A new release first ships to a small subset of Pods — the **canary**
+- The canary gets checked automatically
+- Only if the check passes does the release continue toward 100%
+- If the check fails, Argo Rollouts aborts on its own — most traffic never touches the bad release
 
-This module's practice material is a new, genuinely broken build: `arsr319/finovra-dashboard:1.0.3`. It's not the same image as the good release with a flag flipped — it's a different artifact, with a bug baked into its own Dockerfile default, the same way `1.0.1` was in Module 5. What's new this time is *where* the bug lives: it breaks a dedicated `/healthz` endpoint while `/` — what a plain Deployment's probes check — stays green throughout. That gap is deliberate: it's what the canary analysis in this module is actually built to catch.
-
-> **Would a bad config on a good image trigger the same thing?** Yes, and it's worth knowing that up front. If `1.0.2` deployed fine but a bad environment variable or misconfigured dependency broke `/healthz` at runtime, the `AnalysisTemplate` you're about to build would catch that exactly the same way — it doesn't care *why* the check failed, only that it did. This module ships a bad image because "ship a new release" is the more common real-world trigger for a canary, but config-only regressions are just as real, and just as catchable by the same mechanism.
+This module's practice material is a new, broken build: `arsr319/finovra-dashboard:1.0.3`. It's a genuinely different image, not the same build with a setting flipped — the bug is baked in at build time. The bug lives in a dedicated `/healthz` endpoint. The plain `/` endpoint, which ordinary Pod probes check, stays healthy the whole time. That gap is the point: it's exactly what the canary analysis in this module is built to catch.
 
 ---
 
 ## 2. Canary vs. Blue-Green
 
-Argo Rollouts actually supports two progressive delivery strategies. This module labs **canary** — it's the one you'll reach for most often — but it's worth knowing what **blue-green** does differently, since you'll see it in other teams' `Rollout` specs.
+Argo Rollouts supports two progressive delivery strategies. This module labs **canary** — it's the one you'll reach for most often. It's still worth knowing what **blue-green** does differently, since you'll see it in other teams' `Rollout` specs.
 
-**Canary** (what we're building): a new release gets a *partial* slice of traffic (`setWeight: 50` in our case) alongside the old version, gets checked, then either promotes toward 100% or gets aborted — exactly what you're about to watch happen. Two versions deliberately run side-by-side, briefly, serving real traffic at the same time.
+**Canary:**
+- A new release gets a *partial* slice of traffic (in this module, `setWeight: 50`)
+- It runs alongside the old version and gets checked
+- If the check passes, traffic ramps toward 100%
+- If it fails, the rollout aborts
+- Two versions deliberately serve real traffic side-by-side, briefly
 
-**Blue-green**: two full, independent environments — "blue" (currently active) and "green" (the new release). Green deploys completely and gets verified — often via a separate `previewService` that never receives real user traffic — and only once you're confident does traffic cut over **all at once**. Nothing gradual: one moment everyone hits blue, the next everyone hits green. Blue keeps running afterward, so a rollback is just flipping traffic back, not a redeploy.
+**Blue-green:**
+- Two full, independent environments: "blue" (currently active) and "green" (the new release)
+- Green deploys completely and gets verified separately — often through a `previewService` that never receives real user traffic
+- Traffic then cuts over **all at once** — one moment everyone hits blue, the next everyone hits green
+- Blue keeps running afterward, so rollback just means flipping traffic back, not a redeploy
 
 | | Canary | Blue-Green |
 |---|---|---|
 | Traffic shift | Gradual (a %, ramping toward 100) | Instant, all-or-nothing |
 | Versions serving real users at once | Both, briefly, by design | Only one, ever |
-| Rollback mechanics | Abort the ramp — traffic was never fully shifted | Flip back to the still-running old environment |
-| Best fit | Most stateless services — gradual exposure limits blast radius | Cases where *mixed-version* traffic is the actual danger (schema-sensitive clients, anything that can't tolerate two versions live simultaneously) |
+| Rollback | Abort the ramp — traffic was never fully shifted | Flip back to the still-running old environment |
+| Best fit | Most stateless services — gradual exposure limits blast radius | Cases where mixed-version traffic is itself the danger (e.g. schema-sensitive clients) |
 
-In an Argo Rollouts spec, this is `strategy.blueGreen` instead of `strategy.canary` — `activeService`/`previewService` instead of `canaryService`/`stableService`, plus an `autoPromotionEnabled: false` flag if you want a human to confirm the cutover rather than promoting automatically. We're not building this today: canary demonstrates "automated analysis gates a release" just as well, with less infrastructure, and it's the strategy you'll reach for most of the time in practice. But recognizing `strategy.blueGreen` in someone else's `Rollout` — and knowing it means "verify fully, then cut over all at once" rather than "ramp gradually" — is worth having going in.
+In an Argo Rollouts spec, blue-green uses `strategy.blueGreen` instead of `strategy.canary`, and `activeService`/`previewService` instead of `canaryService`/`stableService`. We're not building this today — canary demonstrates the core idea (automated analysis gates a release) with less setup, and it's the strategy you'll use most often in practice. Recognizing `strategy.blueGreen` when you see it, and knowing it means "verify fully, then cut over all at once," is enough for now.
 
 ---
 
 ## 3. Installing Argo Rollouts
 
-Argo Rollouts is a separate controller with its own CRDs — install both the controller and the `kubectl` plugin used to inspect rollouts.
+Argo Rollouts is a separate controller with its own CRDs. Install both the controller and the `kubectl` plugin used to inspect rollouts.
 
 ```bash
 kubectl create namespace argo-rollouts
@@ -71,13 +82,17 @@ kubectl argo rollouts version
 kubectl get pods -n argo-rollouts
 ```
 
-No changes to ArgoCD itself are needed — it already understands the `Rollout` resource's health natively, the same way it understands a plain `Deployment`.
+ArgoCD itself needs no changes — it already understands the `Rollout` resource's health, the same way it understands a plain `Deployment`.
 
 ---
 
 ## 4. Canary Strategy, In the Chart
 
-Since Module 4, `dashboard`'s template has lived at `helm-chart/templates/dashboard.yaml` as a plain `Deployment`. Converting it to a `Rollout` is the same edit you'd make to raw YAML — swap `apiVersion`/`kind`, add a `strategy` block — it just happens inside a Helm template, so the parts that were already parameterized (image tag, resources) stay exactly as they were:
+`dashboard`'s Helm template, at `helm-chart/templates/dashboard.yaml`, is currently a plain `Deployment`. Converting it to a `Rollout` means two changes:
+- Swap `apiVersion` and `kind`
+- Add a `strategy` block
+
+The parts that are already templated — image tag, resources — stay exactly the same:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -86,8 +101,8 @@ metadata:
   name: dashboard
 spec:
   replicas: {{ .Values.dashboard.replicas }}
-  # ...same selector/template as the Deployment, including the
-  # {{ .Values.dashboard.image.tag | default .Values.image.tag }} pattern from Module 4...
+  # ...same selector/template as before, including the same
+  # image-tag fallback pattern used elsewhere in the chart...
   strategy:
     canary:
       canaryService: dashboard-canary
@@ -99,12 +114,12 @@ spec:
               - templateName: dashboard-healthz-check
 ```
 
-- **`canaryService` / `stableService`** — two Services the Rollout controller manages for you, each automatically pointed at just the canary Pods or just the stable Pods. You pre-create them as empty shells; the controller injects the right selector.
-- **`steps`** — `setWeight: 50` splits replicas roughly 50/50 between canary and stable; `analysis` runs a check against the canary *before* going further.
-- **Notice what's unchanged:** the existing `dashboard` Service (what you `port-forward` to view the app) still selects on plain `app: dashboard`, so it keeps working exactly as before — `canaryService`/`stableService` exist purely to give the analysis step something precise to check.
-- **Notice what's *not* here:** no `FAIL_MODE` env var, no extra `values.yaml` field for it. The bug lives entirely in the `1.0.3` image itself — the chart doesn't need to know anything special to trigger it. A canary of a bad *release* is just a canary of a bad *image tag*, the same "bump a value" motion as everything since Module 5.
+- **`canaryService` / `stableService`** — two Services the Rollout controller manages for you, each pointed at just the canary Pods or just the stable Pods. You pre-create them as empty shells; the controller fills in the right selector.
+- **`steps`** — `setWeight: 50` splits replicas roughly 50/50 between canary and stable. `analysis` then runs a check against the canary before going any further.
+- **What stays unchanged:** the existing `dashboard` Service (what you `port-forward` to view the app) still selects on plain `app: dashboard`, so it keeps working exactly as before. `canaryService`/`stableService` exist purely so the analysis step has something precise to check.
+- **What's not here:** no `FAIL_MODE` env var, no extra `values.yaml` field. The bug lives entirely inside the `1.0.3` image. A canary of a bad release is just a canary of a bad image tag — the same "bump a value" motion you already know.
 
-The two canary/stable Services and the `AnalysisTemplate` don't need any `{{ }}` templating at all — they're static, so they live in one new chart template file, `dashboard-canary.yaml`:
+The canary/stable Services and the `AnalysisTemplate` don't need any templating — they're static, so they live in one new chart file, `dashboard-canary.yaml`:
 
 ```yaml
 apiVersion: v1
@@ -145,9 +160,13 @@ spec:
           jsonPath: "{$.status}"
 ```
 
-The `web` provider does an HTTP GET against the canary-specific service, pulls `status` out of the JSON response via `jsonPath`, and compares it against `successCondition`. `interval`/`count` mean "check 3 times, 10 seconds apart" — a real check across a few samples, not a single roll of the dice.
+How this `AnalysisTemplate` works:
+- The `web` provider does an HTTP GET against the canary-specific service
+- It pulls `status` out of the JSON response using `jsonPath`
+- It compares that value against `successCondition`
+- `interval`/`count` mean "check 3 times, 10 seconds apart" — a few samples, not one roll of the dice
 
-> **What happens if the HTTP call itself fails** (like our `/healthz` returning a `500`)? The metric doesn't even get to evaluate `successCondition` — a non-2xx response counts as a measurement error on its own. Enough consecutive errors (`consecutiveErrorLimit`, default `4`) aborts the rollout, same as failing the condition outright.
+If the HTTP call itself fails — like our `/healthz` returning a `500` — the metric never even gets to evaluate `successCondition`. A non-2xx response counts as a measurement error on its own. Enough consecutive errors (`consecutiveErrorLimit`, default `4`) aborts the rollout, the same as failing the condition outright.
 
 ---
 
@@ -157,7 +176,7 @@ All of this happens in your fork of `gitops`.
 
 ### Step 1 — Convert the dashboard's Helm template to a Rollout
 
-Replace `helm-chart/templates/dashboard.yaml`'s content with this in full — note **both** `apiVersion` and `kind` change at the top, not just `kind`: `Rollout` is a different CRD entirely, not a renamed `Deployment`, so leaving `apiVersion: apps/v1` in place will make the apply fail:
+Replace `helm-chart/templates/dashboard.yaml`'s content with this in full. Note that **both** `apiVersion` and `kind` change at the top, not just `kind`: `Rollout` is a different CRD entirely, not a renamed `Deployment`. Leaving `apiVersion: apps/v1` in place will make the apply fail.
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -224,7 +243,7 @@ spec:
       targetPort: 3000
 ```
 
-Add `helm-chart/templates/dashboard-canary.yaml` (the two Services and the `AnalysisTemplate` from Section 3), then update the `dashboard:` block in `helm-chart/values.yaml`:
+Add `helm-chart/templates/dashboard-canary.yaml` — the two Services and the `AnalysisTemplate` shown above. Then update the `dashboard:` block in `helm-chart/values.yaml`:
 
 ```yaml
 dashboard:
@@ -239,6 +258,8 @@ dashboard:
       cpu: 100m
       memory: 128Mi
 ```
+
+Sanity-check it locally:
 
 ```bash
 helm lint helm-chart
@@ -265,11 +286,11 @@ Wait for `Status: ✔ Healthy`, `Step: 2/2`, `SetWeight: 100`. Confirm `argocd a
 
 ### Step 3 — Ship a good change, watch the canary pass
 
-This step is optional — if you'd rather see one full successful canary cycle before breaking anything, push any harmless change to `helm-chart/values.yaml` (leave `dashboard.image.tag: "1.0.2"` as-is) and watch it sail through `Step: 2/2` on its own. Otherwise, move straight to Step 4.
+Optional. If you'd rather see one full successful canary cycle before breaking anything, push any harmless change to `helm-chart/values.yaml` (leave `dashboard.image.tag: "1.0.2"` as-is) and watch it sail through `Step: 2/2` on its own. Otherwise, move straight to Step 4.
 
 ### Step 4 — Inject the failure
 
-Bump `dashboard.image.tag` to `"1.0.3"` in `helm-chart/values.yaml`, commit, push — the exact same motion as shipping any release since Module 5:
+Bump `dashboard.image.tag` to `"1.0.3"` in `helm-chart/values.yaml`, commit, push:
 
 ```bash
 git add helm-chart/values.yaml
@@ -277,19 +298,19 @@ git commit -m "Ship a bad dashboard release: bump image tag to 1.0.3"
 git push origin main
 ```
 
-Watch it happen — this takes about a minute, so don't be surprised if nothing looks different for the first 30-40 seconds:
+Watch it happen. This takes about a minute, so don't be surprised if nothing looks different for the first 30-40 seconds:
 
 ```bash
 kubectl argo rollouts get rollout dashboard -n finovra --watch
 ```
 
-You'll see `SetWeight` jump to `50`, then the analysis step start running. After a few failed checks, watch the status flip to `✖ Degraded` with a message like:
+You'll see `SetWeight` jump to `50`, then the analysis step start running. After a few failed checks, the status flips to `✖ Degraded` with a message like:
 
 ```
 RolloutAborted: ... Metric "healthz-ok" assessed Error due to consecutiveErrors (5) > consecutiveErrorLimit (4): "Error Message: received non 2xx response code: 500"
 ```
 
-Press `Ctrl+C`. Confirm two things:
+Press `Ctrl+C`. Then confirm two things:
 
 ```bash
 argocd app get finovra
@@ -297,9 +318,9 @@ kubectl get svc dashboard-stable -n finovra -o jsonpath='{.spec.selector}'
 curl -s http://localhost:8082/api/tiles   # if you still have the port-forward from earlier modules running
 ```
 
-`Sync Status` stays `Synced` the whole time — Git and the live Rollout object agree, `1.0.3` really is the image that's declared and rendered. Only `Health Status` flags the problem, because the *analysis* failed, not because anything drifted from Git. **This is worth sitting with:** the sync/health distinction from Module 3 just showed up again, in a completely different context, and it's exactly as useful here as it was there.
-
-The stable Pods — still running `1.0.2` — never stopped serving traffic.
+Two things to notice:
+- **`Sync Status` stays `Synced`.** Git and the live Rollout object agree — `1.0.3` really is the image that's declared and rendered. Only `Health Status` flags the problem, because the *analysis* failed, not because anything drifted from Git.
+- **The stable Pods — still running `1.0.2` — never stopped serving traffic.**
 
 ### Step 5 — Fix it and confirm recovery
 
@@ -311,7 +332,7 @@ kubectl argo rollouts get rollout dashboard -n finovra --watch
 
 A fresh commit is a fresh revision, so Argo Rollouts attempts the canary again from scratch — no special "retry" command needed. Watch it pass the analysis this time and promote to `Step: 2/2`, `SetWeight: 100`, `Healthy`.
 
-**Checkpoint:** you've now watched a canary release get caught and rolled back automatically — no `argocd app rollback`, no `git revert` *before* the fact, nothing manual in the moment it mattered. The only human action was deciding what change to push next. And it all happened through the same Helm chart you committed to in Module 4, using the same "bump the image tag" motion Module 5 already taught — nothing here needed a new mental model or a step back out to raw YAML.
+**Checkpoint:** you've watched a canary release get caught and rolled back automatically. No `argocd app rollback`, no `git revert` *before* the fact — nothing manual in the moment it mattered. The only human action was deciding what change to push next.
 
 ---
 
@@ -336,8 +357,7 @@ A fresh commit is a fresh revision, so Argo Rollouts attempts the canary again f
 2. In Step 4, why did `Sync Status` stay `Synced` even while the Rollout was actively failing?
 3. Why couldn't a plain `Deployment`'s liveness/readiness probes have caught `1.0.3`'s bug the way the canary analysis did?
 4. In Step 5, why didn't you need to run any special "retry" command to get the Rollout to attempt the canary again?
-5. The `AnalysisTemplate` doesn't know or care whether `/healthz` failed because of bad code or a bad config value. Why doesn't that distinction matter to it?
-6. A schema-sensitive client can't tolerate two API versions being live at once, even briefly. Would you reach for canary or blue-green here — and what specifically about canary makes it the wrong fit?
+5. A schema-sensitive client can't tolerate two API versions being live at once, even briefly. Would you reach for canary or blue-green here — and what specifically about canary makes it the wrong fit?
 
 ---
 
