@@ -9,6 +9,7 @@
 
 By the end of this module, you should be able to:
 - Explain why plain ArgoCD sync isn't enough for a release you're not fully confident in
+- Explain the difference between canary and blue-green strategies, and when a team would reach for each
 - Convert a Helm-templated Deployment into an Argo Rollouts canary, with a dedicated canary Service for targeted checks
 - Write an `AnalysisTemplate` that checks something plain health probes can't
 - Watch a bad release get caught and automatically aborted — before it ever reaches full rollout, with zero manual rollback command
@@ -27,7 +28,26 @@ This module's practice material is a new, genuinely broken build: `arsr319/finov
 
 ---
 
-## 2. Installing Argo Rollouts
+## 2. Canary vs. Blue-Green
+
+Argo Rollouts actually supports two progressive delivery strategies. This module labs **canary** — it's the one you'll reach for most often — but it's worth knowing what **blue-green** does differently, since you'll see it in other teams' `Rollout` specs.
+
+**Canary** (what we're building): a new release gets a *partial* slice of traffic (`setWeight: 50` in our case) alongside the old version, gets checked, then either promotes toward 100% or gets aborted — exactly what you're about to watch happen. Two versions deliberately run side-by-side, briefly, serving real traffic at the same time.
+
+**Blue-green**: two full, independent environments — "blue" (currently active) and "green" (the new release). Green deploys completely and gets verified — often via a separate `previewService` that never receives real user traffic — and only once you're confident does traffic cut over **all at once**. Nothing gradual: one moment everyone hits blue, the next everyone hits green. Blue keeps running afterward, so a rollback is just flipping traffic back, not a redeploy.
+
+| | Canary | Blue-Green |
+|---|---|---|
+| Traffic shift | Gradual (a %, ramping toward 100) | Instant, all-or-nothing |
+| Versions serving real users at once | Both, briefly, by design | Only one, ever |
+| Rollback mechanics | Abort the ramp — traffic was never fully shifted | Flip back to the still-running old environment |
+| Best fit | Most stateless services — gradual exposure limits blast radius | Cases where *mixed-version* traffic is the actual danger (schema-sensitive clients, anything that can't tolerate two versions live simultaneously) |
+
+In an Argo Rollouts spec, this is `strategy.blueGreen` instead of `strategy.canary` — `activeService`/`previewService` instead of `canaryService`/`stableService`, plus an `autoPromotionEnabled: false` flag if you want a human to confirm the cutover rather than promoting automatically. We're not building this today: canary demonstrates "automated analysis gates a release" just as well, with less infrastructure, and it's the strategy you'll reach for most of the time in practice. But recognizing `strategy.blueGreen` in someone else's `Rollout` — and knowing it means "verify fully, then cut over all at once" rather than "ramp gradually" — is worth having going in.
+
+---
+
+## 3. Installing Argo Rollouts
 
 Argo Rollouts is a separate controller with its own CRDs — install both the controller and the `kubectl` plugin used to inspect rollouts.
 
@@ -55,7 +75,7 @@ No changes to ArgoCD itself are needed — it already understands the `Rollout` 
 
 ---
 
-## 3. Canary Strategy, In the Chart
+## 4. Canary Strategy, In the Chart
 
 Since Module 4, `dashboard`'s template has lived at `helm-chart/templates/dashboard.yaml` as a plain `Deployment`. Converting it to a `Rollout` is the same edit you'd make to raw YAML — swap `apiVersion`/`kind`, add a `strategy` block — it just happens inside a Helm template, so the parts that were already parameterized (image tag, resources) stay exactly as they were:
 
@@ -300,7 +320,9 @@ A fresh commit is a fresh revision, so Argo Rollouts attempts the canary again f
 | Term | Meaning |
 |---|---|
 | **Canary** | A small subset of Pods running the new release, checked before the rest of the fleet is updated |
+| **Blue-Green** | An alternative strategy: the new release deploys fully and gets verified separately, then traffic cuts over all at once — no gradual ramp, no mixed-version traffic |
 | **`canaryService` / `stableService`** | Services the Rollout controller manages automatically, each scoped to just canary or just stable Pods |
+| **`activeService` / `previewService`** | Blue-green's equivalent of `canaryService`/`stableService` — `previewService` is where you verify the new version before the cutover |
 | **`AnalysisTemplate`** | A reusable definition of what to check and how often, referenced by name from a Rollout's steps |
 | **`web` provider** | An `AnalysisTemplate` metric type that does an HTTP GET and evaluates the response |
 | **`consecutiveErrorLimit`** | How many failed HTTP calls in a row before the analysis gives up and counts it as a failure — separate from `successCondition` failing |
@@ -315,6 +337,7 @@ A fresh commit is a fresh revision, so Argo Rollouts attempts the canary again f
 3. Why couldn't a plain `Deployment`'s liveness/readiness probes have caught `1.0.3`'s bug the way the canary analysis did?
 4. In Step 5, why didn't you need to run any special "retry" command to get the Rollout to attempt the canary again?
 5. The `AnalysisTemplate` doesn't know or care whether `/healthz` failed because of bad code or a bad config value. Why doesn't that distinction matter to it?
+6. A schema-sensitive client can't tolerate two API versions being live at once, even briefly. Would you reach for canary or blue-green here — and what specifically about canary makes it the wrong fit?
 
 ---
 
