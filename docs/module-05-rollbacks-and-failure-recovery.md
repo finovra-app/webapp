@@ -10,107 +10,102 @@
 By the end of this module, you should be able to:
 - Explain why ArgoCD's `Health Status` alone doesn't prove a release is actually working
 - Perform a native ArgoCD rollback, and explain exactly what it does and doesn't fix
-- Roll back the "correct" GitOps way, with `git revert`, and explain why it's preferred over rewriting history
 - Pause ArgoCD's reconciliation during an incident, apply an emergency mitigation, and resume cleanly once a real fix is ready
+- Roll back the "correct" GitOps way, with `git revert`, and explain why it's preferred over rewriting history
 
 ---
 
 ## 1. "Healthy" Doesn't Mean "Working"
 
-This module's practice material is `arsr319/finovra-dashboard:1.0.1` — a real, deliberately broken build. The bug: `public/index.html`'s client-side JS calls `fetch("/api/tile")` instead of `fetch("/api/tiles")` — a typo'd, non-existent endpoint. The request 404s, the failure is silently caught, and the page just never finishes loading its content.
+This module's practice material is `arsr319/finovra-dashboard:1.0.1` — a real, deliberately broken build.
 
-Here's what makes this bug worth building a whole module's practice material around: **deploy it, and ArgoCD tells you everything is fine.** The container starts. `/` still returns `200`, so liveness and readiness probes pass. `Sync Status` reads `Synced`. `Health Status` reads `Healthy`. Every signal `kubectl get pods` and `argocd app get` can give you says this release is good — and the dashboard is visibly broken the moment you open it in a browser.
+The bug: `public/index.html`'s client-side JS calls `fetch("/api/tile")` instead of `fetch("/api/tiles")` — a typo'd, non-existent endpoint. The request 404s. The failure is silently caught. The page just never finishes loading its content.
 
-This is deliberate, and it's the whole point of Section 1's learning objective: **ArgoCD's health checks tell you the container is running the way Kubernetes expects, not that the application is doing its job correctly.** A crash-looping Pod is easy to catch. A Pod that starts fine and quietly serves a broken page is not — and it's a far more common real-world failure mode than a crash. Before you reach for any rollback technique, the actual diagnostic step is: **look at the thing.**
+Here's what makes this bug worth building a module around: **deploy it, and ArgoCD tells you everything is fine.**
+- The container starts
+- `/` still returns `200`, so liveness and readiness probes pass
+- `Sync Status` reads `Synced`
+- `Health Status` reads `Healthy`
+
+Every signal `kubectl get pods` and `argocd app get` can give you says this release is good. The dashboard is visibly broken the moment you open it in a browser.
+
+**ArgoCD's health checks tell you the container is running the way Kubernetes expects — not that the application is doing its job correctly.** A crash-looping Pod is easy to catch. A Pod that starts fine and quietly serves a broken page is not, and it's a far more common real-world failure mode than a crash. Before reaching for any rollback technique, the actual diagnostic step is: **look at the thing.**
 
 ---
 
 ## 2. Technique 1: Native ArgoCD Rollback
 
-ArgoCD remembers every sync it's ever performed — that history is what powers the UI's **History and Rollback** tab and the `argocd app rollback` command. In principle, rolling back is as simple as pointing at an earlier entry:
+ArgoCD remembers every sync it's ever performed. That history powers the UI's **History and Rollback** tab and the `argocd app rollback` command. Rolling back is, in principle, as simple as pointing at an earlier entry:
 
 ```bash
 argocd app history finovra
 argocd app rollback finovra <ID>
 ```
 
-**There's a catch, and it's worth hitting deliberately rather than reading about it:** if `automated` sync is enabled, ArgoCD refuses outright:
+There's a catch worth hitting deliberately rather than just reading about: if `automated` sync is enabled, ArgoCD refuses outright.
 
 ```
 rollback cannot be initiated when auto-sync is enabled
 ```
 
-This makes sense once you think about it — automated sync's entire job is "make the cluster match the latest commit in Git." A native rollback tells the cluster to run something *other* than the latest commit. Those two instructions directly conflict, so ArgoCD won't let you set up a fight it would just keep re-losing every reconciliation cycle. You have to disable automated sync first:
+This makes sense: automated sync's job is "make the cluster match the latest commit in Git." A native rollback tells the cluster to run something *other* than the latest commit — those two instructions directly conflict. You have to disable automated sync first:
 
 ```bash
 argocd app set finovra --sync-policy none
 argocd app rollback finovra <ID>
 ```
 
-**Here's the more important catch, and it's the real lesson of this technique:** once the rollback completes, the *cluster* is back on the good version — but `Sync Status` now reads `OutOfSync`, because **Git still has the bad commit at `HEAD`.** You fixed what's running without fixing what Git says should be running. Anyone who looks at the repo still sees the broken release as "current." If automated sync gets re-enabled by someone before the real fix lands, ArgoCD will cheerfully redeploy the broken version right back — Git is still the source of truth, and native rollback never touched it.
+Here's the real lesson of this technique. Once the rollback completes, the *cluster* is back on the good version — but `Sync Status` now reads `OutOfSync`, because **Git still has the bad commit at `HEAD`.** You fixed what's running without fixing what Git says should be running. Anyone who looks at the repo still sees the broken release as "current." If automated sync gets re-enabled before a real fix lands, ArgoCD will redeploy the broken version right back — Git is still the source of truth, and native rollback never touched it.
 
-That's the tradeoff: native rollback is the **fastest** way to get a good version running again, but it's a live-cluster action that leaves Git lying about reality until someone follows up with a real fix.
-
----
-
-## 3. Technique 2: Git Revert — The "Correct" Way
-
-`git revert` fixes the actual problem: Git's dishonesty. Instead of telling the *cluster* to ignore Git, you create a new commit that undoes the bad one:
-
-```bash
-git revert <bad-commit-sha>
-git push origin main
-```
-
-With automated sync enabled, ArgoCD picks this up on its own — no `argocd app sync`, no `argocd app rollback`, nothing that touches the live `Application` object. `Sync Status` and `Health Status` both settle back to `Synced`/`Healthy`, and this time they mean it: Git and the cluster agree, and Git's history is honest — it shows a bad release *and* the commit that reverted it, not a rewritten past. This is why it's the technique most teams reach for by default: slower than a native rollback (you're waiting on the normal Git → sync path), but it never leaves a gap between what's running and what Git claims is running.
+Native rollback is the **fastest** way to get a good version running again. But it's a live-cluster action that leaves Git lying about reality until someone follows up with a real fix.
 
 ---
 
-## 4. Technique 3: Pausing Reconciliation During an Incident
+## 3. Technique 2: Pausing Reconciliation During an Incident
 
-The first two techniques both assume you can fix things by changing *desired state* — either the live Application (Technique 1) or Git (Technique 2). Real incidents aren't always that clean. Sometimes the fastest way to stop the bleeding is a direct, temporary `kubectl` action — and with `selfHeal` enabled, ArgoCD will fight you on it.
+Native rollback fixes the cluster but not Git. If nobody follows up, the next time automated sync gets re-enabled, ArgoCD dutifully redeploys the broken release again — because Git still says that's correct. That's the situation this technique deals with: **the incident isn't actually over, and you need to buy time without ArgoCD undoing whatever you do next.**
 
-Watch this happen: scale the broken dashboard to zero, trying to stop it serving broken pages to users while you figure out a real fix.
+With `selfHeal` enabled, ArgoCD fights any manual `kubectl` change that isn't reflected in Git. Watch this happen — try to take the broken dashboard offline so it stops serving broken pages to users:
 
 ```bash
 kubectl scale deployment dashboard -n finovra --replicas=0
 ```
 
-Within seconds, it's back at `1/1`. `selfHeal` did exactly what it's supposed to do — Git still says `replicas: 1`, so ArgoCD reverted your change. Correct behavior in general, actively unhelpful in this specific moment.
+Within seconds, it's back at `1/1`. `selfHeal` did exactly what it's supposed to do: Git still says `replicas: 1`, so ArgoCD reverted the change. Correct behavior in general, actively unhelpful in this specific moment.
 
-**The fix: pause reconciliation on this Application before making the emergency change.**
+**The fix: pause reconciliation before making the emergency change.**
 
 ```bash
 argocd app set finovra --sync-policy none
 kubectl scale deployment dashboard -n finovra --replicas=0
 ```
 
-This time it sticks — `Sync Status` flips to `OutOfSync` (ArgoCD notices the drift and says so), but nothing reverts it, because there's no automated sync left to do the reverting. You've bought yourself time without ArgoCD undoing your mitigation every few seconds.
+This time it sticks. `Sync Status` flips to `OutOfSync` — ArgoCD notices the drift and says so — but nothing reverts it, because there's no automated sync left to do the reverting.
 
-Now, *while paused*, prepare the actual fix the normal way:
+**Be clear about what this did and didn't do:** scaling to zero doesn't fix anything. Nobody gets a working dashboard — they get no dashboard at all. This is containment, not a fix. The actual fix is still Technique 3, next.
+
+---
+
+## 4. Technique 3: Git Revert — The Fix
+
+`git revert` fixes the actual problem: Git's dishonesty. Instead of telling the *cluster* to ignore Git, you create a new commit that undoes the bad one.
 
 ```bash
 git revert <bad-commit-sha>
 git push origin main
 ```
 
-Nothing happens yet — reconciliation is still paused, so the cluster stays exactly as you left it (zero replicas, bad image) even though Git already has the real fix sitting there. This is intentional: pausing means pausing, not "sync everything except this one field."
+With automated sync re-enabled, ArgoCD picks this up on its own. No `argocd app sync`, no `argocd app rollback` — nothing that touches the live `Application` object directly. `Sync Status` and `Health Status` both settle back to `Synced`/`Healthy`, and this time they mean it: Git and the cluster agree, and Git's history stays honest — it shows a bad release *and* the commit that reverted it, not a rewritten past.
 
-Once you're ready to hand control back to ArgoCD:
+This is the technique most teams reach for by default. It's slower than a native rollback, since you're waiting on the normal Git → sync path, but it never leaves a gap between what's running and what Git claims is running.
 
-```bash
-argocd app set finovra --sync-policy automated --auto-prune --self-heal
-```
-
-Everything converges in one reconciliation — the replica count back to `1`, *and* the image back to the good version — because Git was already fixed while you were paused. `Sync Status: Synced`, `Health Status: Healthy`.
-
-> **Why not just `kubectl edit` the broken code?** You can't — the bug is baked into the container image itself. A `kubectl` hotfix can change what's *running* (replica count, resource limits, env vars, taking a bad Pod out of rotation) but it can't rewrite application code sitting inside an already-built image. That's exactly why this technique exists: it's for stabilizing the blast radius of an incident, not for fixing the underlying defect. The defect always still needs a real fix, via Git, same as Technique 2.
+> **Why not just `kubectl edit` the broken code directly?** You can't — the bug is baked into the container image itself. A `kubectl` hotfix can change what's *running* (replica count, resource limits, env vars, taking a bad Pod out of rotation), but it can't rewrite application code sitting inside an already-built image. The defect always needs a real fix through Git.
 
 ---
 
-## Lab: Break It, Then Recover It Three Ways
+## Lab: Break It, Then Recover It
 
-All of this happens in your fork of `gitops`.
+All of this happens in your fork of `gitops`. You'll only need **two commits** for the whole lab — one to introduce the bad release, one to fix it for real.
 
 ### Step 1 — Deploy the bad release
 
@@ -123,9 +118,9 @@ dashboard:
     tag: "1.0.1"   # was ""
 ```
 
-**Change only this one line.** `accounts-service`, `insurance-service`, `investments-service`, and `loans-service` each have their own `image.tag: ""` line right below it in the same file — a blanket find-and-replace for `tag: ""` across the whole file will bump all five services instead of just `dashboard`, and the four backends don't have a `1.0.1` image on Docker Hub at all, so they'll go straight to `ImagePullBackOff`. Edit `dashboard`'s block by hand. One field, one service — that's the whole point of the fallback pattern from Module 4.
+**Change only this one line.** `accounts-service`, `insurance-service`, `investments-service`, and `loans-service` each have their own `image.tag: ""` line in the same file. There's also a *global* `image.tag` near the top of the file — don't touch that one either, it's the fallback every service uses when its own tag is empty. Editing the global tag, or find-and-replacing `tag: ""` across the whole file, bumps all five services at once. Only `dashboard` has a `1.0.1` build on Docker Hub — the other four will fail to pull.
 
-Because the template derives both the image tag *and* the `VERSION` env var from this same field, this single line is enough — no second edit needed the way the old plain-YAML version required.
+Because the template derives both the image tag *and* the `VERSION` env var from this one field, this single line is enough.
 
 ```bash
 git add helm-chart/values.yaml
@@ -139,7 +134,7 @@ Wait for automated sync to pick it up, then confirm the trap:
 argocd app get finovra
 ```
 
-`Sync Status: Synced`, `Health Status: Healthy` — looks completely fine. Now open the dashboard in your browser. The header shows `v...` forever and the tile grid never populates. **That's the diagnostic step this module opened with:** the status line lied, or more precisely, it told you something true (the container's running) that you mistook for something false (the app works).
+`Sync Status: Synced`, `Health Status: Healthy` — looks completely fine. Now open the dashboard in your browser. The header shows `v...` forever and the tile grid never populates. That's the diagnostic step from Section 1: the status line told you something true (the container's running), which you might mistake for something false (the app works).
 
 ### Step 2 — Recover with native rollback
 
@@ -155,32 +150,28 @@ Confirm the dashboard is visibly fixed, then confirm the catch:
 argocd app get finovra
 ```
 
-`Sync Status: OutOfSync` — the cluster's fixed, Git isn't. Leave it like this for a moment and let that sink in before moving on.
+`Sync Status: OutOfSync` — the cluster's fixed, Git isn't. Leave it like this for a moment before moving on.
 
-### Step 3 — Recover with Git revert
+### Step 3 — See the incident come back, then contain it
 
-Find the bad commit's SHA (`git log --oneline`), then:
+Sync is still disabled from Step 2, and Git still has `1.0.1` at `HEAD`. Re-enable automated sync and watch what happens:
 
 ```bash
-git revert <bad-commit-sha>
-git push origin main
 argocd app set finovra --sync-policy automated --auto-prune --self-heal
+argocd app sync finovra
+argocd app get finovra
 ```
 
-Watch `argocd app get finovra` settle to `Synced`/`Healthy` — this time genuinely, both the cluster *and* Git agree the good version is current.
+The dashboard goes broken again — `Health Status: Healthy`, visibly not working. No new commit was needed: Git already had `1.0.1` declared, and automated sync just did its job. This is exactly the risk Section 3 described.
 
-### Step 4 — Redeploy the bad release, then recover by pausing
-
-Repeat Step 1 (`dashboard.image.tag` back to `1.0.1` in `helm-chart/values.yaml`, commit, push, wait for sync).
-
-Try the *unprotected* emergency scale-down first, and watch it get reverted:
+Now run the before/after from Technique 2. First, the unprotected attempt:
 
 ```bash
 kubectl scale deployment dashboard -n finovra --replicas=0
 kubectl get deployment dashboard -n finovra -w
 ```
 
-Press `Ctrl+C` once you see it bounce back to `1/1`. Now do it the protected way:
+Press `Ctrl+C` once you see it bounce back to `1/1` — `selfHeal` reverted it. Now the protected version:
 
 ```bash
 argocd app set finovra --sync-policy none
@@ -188,7 +179,11 @@ kubectl scale deployment dashboard -n finovra --replicas=0
 kubectl get deployment dashboard -n finovra
 ```
 
-Confirm it stays at `0/0` this time. Prepare and push the real fix:
+Confirm it stays at `0/0`. The dashboard is offline — contained, not fixed.
+
+### Step 4 — Ship the real fix
+
+Find the bad commit's SHA (`git log --oneline`), then, while still paused:
 
 ```bash
 git revert <bad-commit-sha>
@@ -196,14 +191,16 @@ git push origin main
 kubectl get deployment dashboard -n finovra
 ```
 
-Confirm nothing has changed yet — still paused. Finally, resume:
+Confirm nothing has changed yet — still paused, still `0/0`. Then hand control back to ArgoCD:
 
 ```bash
 argocd app set finovra --sync-policy automated --auto-prune --self-heal
 argocd app get finovra
 ```
 
-**Checkpoint:** `Sync Status: Synced`, `Health Status: Healthy`, `dashboard` back at `1/1` on `1.0.0`. You've now recovered from the same broken release three different ways, and watched each technique's specific tradeoff play out for real — not just read about it.
+Everything converges in one reconciliation: replicas back to `1`, image back to `1.0.0`, `Sync Status: Synced`, `Health Status: Healthy` — genuinely this time, because Git and the cluster now agree.
+
+**Checkpoint:** you've recovered from the same broken release three different ways — a fast cluster-only fix, a contained incident, and a real Git-based fix — using two commits total, and watched each technique's specific tradeoff play out for real.
 
 ---
 
@@ -212,9 +209,10 @@ argocd app get finovra
 | Term | Meaning |
 |---|---|
 | **Native rollback** | `argocd app rollback` — fastest recovery, but only changes the live cluster; Git still shows the bad release as current until you fix it separately |
-| **Git revert** | A new commit that undoes a bad one — slower (waits on the normal sync path) but keeps Git and the cluster in agreement the whole time |
 | **`--sync-policy none`** | Disables automated sync on the live `Application` object without touching Git or your local manifest file |
 | **Reconciliation pause** | Temporarily disabling automated sync so an emergency `kubectl` mitigation isn't immediately reverted by `selfHeal` |
+| **Containment vs. a fix** | Containment (like scaling to zero) stops the damage; it doesn't restore working service. Only a real fix — via rollback or Git revert — does that |
+| **Git revert** | A new commit that undoes a bad one — slower than native rollback, but keeps Git and the cluster in agreement the whole time |
 | **Health Status vs. actual correctness** | A Pod can be `Healthy` (passing its probes) while the application it's running is completely broken — probes check what you told them to check, nothing more |
 
 ---
@@ -223,9 +221,9 @@ argocd app get finovra
 
 1. Why did `Health Status` stay `Healthy` throughout this entire module, even while the dashboard was visibly broken?
 2. Why does ArgoCD refuse to run `argocd app rollback` while automated sync is enabled?
-3. After a native rollback, `Sync Status` shows `OutOfSync`. What, specifically, is out of sync with what?
-4. In Step 4, the exact same `kubectl scale --replicas=0` command produced two different outcomes. What changed in between, and why?
-5. Why couldn't a `kubectl` hotfix fix the actual bug in this module's practice release, only mitigate around it?
+3. In Step 3, why did the dashboard go broken again the moment you re-enabled automated sync, without you pushing any new commit?
+4. In Step 3, the exact same `kubectl scale --replicas=0` command produced two different outcomes. What changed in between, and why?
+5. Scaling the dashboard to zero stops it serving broken pages. Why isn't that the same thing as fixing it?
 
 ---
 
