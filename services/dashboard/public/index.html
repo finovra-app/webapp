@@ -20,6 +20,19 @@
       const POLL_INTERVAL_MS = 5000;
 
       function tileHtml(tile) {
+        if (tile.status === "error") {
+          return `
+            <div class="rounded-xl border border-red-800 bg-red-950/40 p-5">
+              <div class="flex items-center justify-between mb-2">
+                <div class="text-3xl">${tile.icon}</div>
+                <span class="inline-flex items-center gap-1.5 text-xs text-red-400">
+                  <span class="h-2 w-2 rounded-full bg-red-500"></span> failed
+                </span>
+              </div>
+              <div class="text-lg font-semibold capitalize">${tile.name}</div>
+              <div class="text-sm text-red-400 mt-1">Failed to load</div>
+            </div>`;
+        }
         if (!tile.healthy) {
           return `
             <div class="rounded-xl border border-slate-800 bg-slate-800/40 p-5 opacity-50">

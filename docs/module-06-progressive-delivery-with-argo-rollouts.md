@@ -26,7 +26,7 @@ Every deploy so far has worked the same way: push a change, ArgoCD applies it to
 - Only if the check passes does the release continue toward 100%
 - If the check fails, Argo Rollouts aborts on its own — most traffic never touches the bad release
 
-This module's practice material is a new, broken build: `arsr319/finovra-dashboard:1.0.3`. It's a genuinely different image, not the same build with a setting flipped — the bug is baked in at build time. The bug lives in a dedicated `/healthz` endpoint. The plain `/` endpoint, which ordinary Pod probes check, stays healthy the whole time. That gap is the point: it's exactly what the canary analysis in this module is built to catch.
+This module's practice material is a new, broken build: `arsr319/finovra-dashboard:1.0.3`. It's a genuinely different image, not the same build with a setting flipped — the bug is baked in at build time (see the appendix at the end of this module for exactly how). The bug lives in a dedicated `/healthz` endpoint, which is what the canary analysis checks — and, so you can *see* the bad release with your own eyes and not just take the analysis's word for it, two of the dashboard's four tiles (`insurance`, `loans`) render visibly broken (red, "Failed to load") whenever a request happens to land on a `1.0.3` Pod. The plain `/` endpoint, which ordinary Pod probes check, stays up and returns `200` the whole time — a plain `Deployment`'s liveness/readiness probes would never have caught this.
 
 ---
 
@@ -117,7 +117,7 @@ spec:
 - **`canaryService` / `stableService`** — two Services the Rollout controller manages for you, each pointed at just the canary Pods or just the stable Pods. You pre-create them as empty shells; the controller fills in the right selector.
 - **`steps`** — `setWeight: 50` splits replicas roughly 50/50 between canary and stable. `analysis` then runs a check against the canary before going any further.
 - **What stays unchanged:** the existing `dashboard` Service (what you `port-forward` to view the app) still selects on plain `app: dashboard`, so it keeps working exactly as before. `canaryService`/`stableService` exist purely so the analysis step has something precise to check.
-- **What's not here:** no `FAIL_MODE` env var, no extra `values.yaml` field. The bug lives entirely inside the `1.0.3` image. A canary of a bad release is just a canary of a bad image tag — the same "bump a value" motion you already know.
+- **What's not here:** no `FAIL_MODE`/`FAIL_TILES` field in `values.yaml`, no chart change of any kind to make `1.0.3` fail. Those two env vars exist in `dashboard`'s code, but for `1.0.3` they're baked in as image-level defaults at `docker build` time (see the appendix), not passed in by the chart. From the chart's point of view, `1.0.3` is just another tag — a canary of a bad release is just a canary of a bad image tag, the same "bump a value" motion you already know.
 
 The canary/stable Services and the `AnalysisTemplate` don't need any templating — they're static, so they live in one new chart file, `dashboard-canary.yaml`:
 
@@ -151,8 +151,9 @@ metadata:
 spec:
   metrics:
     - name: healthz-ok
-      interval: 10s
-      count: 3
+      interval: 15s
+      count: 10
+      consecutiveErrorLimit: 8
       successCondition: result == "ok"
       provider:
         web:
@@ -164,9 +165,45 @@ How this `AnalysisTemplate` works:
 - The `web` provider does an HTTP GET against the canary-specific service
 - It pulls `status` out of the JSON response using `jsonPath`
 - It compares that value against `successCondition`
-- `interval`/`count` mean "check 3 times, 10 seconds apart" — a few samples, not one roll of the dice
+- `interval`/`count` mean "check up to 10 times, 15 seconds apart" — a spread-out sample, not one roll of the dice
 
-If the HTTP call itself fails — like our `/healthz` returning a `500` — the metric never even gets to evaluate `successCondition`. A non-2xx response counts as a measurement error on its own. Enough consecutive errors (`consecutiveErrorLimit`, default `4`) aborts the rollout, the same as failing the condition outright.
+If the HTTP call itself fails — like our `/healthz` returning a `500` — the metric never even gets to evaluate `successCondition`. A non-2xx response counts as a measurement error on its own. Enough consecutive errors (`consecutiveErrorLimit`) aborts the rollout, the same as failing the condition outright. The default `consecutiveErrorLimit` is `4`, which (at the default `interval: 10s`) aborts in well under a minute — barely enough time to alt-tab to a browser. This module sets it to `8` at `interval: 15s` instead, so a failing canary stays up for roughly two minutes (`8 × 15s`) before the controller scales it down — long enough to keep refreshing the dashboard in a browser tab and actually land on a broken canary Pod a few times, not just take the analysis's word for it.
+
+### Why Three Services, and How Traffic Actually Reaches Each One
+
+```mermaid
+flowchart TB
+    User((You: browser / port-forward)) --> DashSvc
+
+    subgraph Cluster["Kubernetes Cluster — finovra namespace"]
+        DashSvc["Service: dashboard\nselector: app=dashboard\n(unmanaged, always both versions)"]
+        CanarySvc["Service: dashboard-canary\nselector patched by controller to\nonly the canary ReplicaSet's pods"]
+        StableSvc["Service: dashboard-stable\nselector patched by controller to\nonly the stable ReplicaSet's pods"]
+
+        StablePods["Stable Pods\n(1.0.2 — current release)"]
+        CanaryPods["Canary Pods\n(1.0.3 — new release)"]
+
+        DashSvc -- "round-robins across\nALL matching pods" --> StablePods
+        DashSvc -- "round-robins across\nALL matching pods" --> CanaryPods
+
+        StableSvc --> StablePods
+        CanarySvc --> CanaryPods
+
+        RC["Rollout Controller"] -- "setWeight: 50 →\nscales ReplicaSet sizes" --> StablePods
+        RC -- "setWeight: 50 →\nscales ReplicaSet sizes" --> CanaryPods
+        RC -- "reads pass/fail,\ndecides promote or abort" --> Analysis
+
+        Analysis["AnalysisTemplate\ndashboard-healthz-check"] -- "GET /healthz\nevery 15s, up to x10" --> CanarySvc
+    end
+```
+
+| Service | Who talks to it | What it actually routes to |
+|---|---|---|
+| **`dashboard`** | You (via `port-forward`), or whatever sits in front of the app in a real deployment | Every Pod labeled `app: dashboard` — stable *and* canary, indiscriminately. It's a plain, unmanaged Service; it doesn't know or care which ReplicaSet a Pod belongs to. |
+| **`dashboard-canary`** | Only the `AnalysisTemplate` | Just the canary ReplicaSet's Pods (the new, unverified version). The Rollout controller patches this Service's selector at runtime to scope it precisely — that's the "empty shell" you pre-create getting filled in. |
+| **`dashboard-stable`** | Nothing in this lab calls it directly, but it exists for the same reason `dashboard-canary` does | Just the stable ReplicaSet's Pods (the last known-good version). Useful if you later add a check or an ingress rule that needs to hit *only* the proven version. |
+
+**How the traffic split actually happens — the part that trips people up:** there's no service mesh or weighted-routing ingress in this setup (no Istio, no NGINX canary annotations, no `trafficRouting` block in the `Rollout` spec). So `setWeight: 50` doesn't create a literal "50% of requests" rule anywhere. What it actually does is tell the controller to scale the ReplicaSets so roughly half the `app: dashboard` Pods are canary and half are stable. The plain `dashboard` Service then does ordinary Kubernetes round-robin load balancing across *all* of those Pods — so the ~50/50 traffic split you get is a side effect of the ~50/50 Pod count, not a rule enforced at the Service or network layer. `dashboard-canary` and `dashboard-stable` exist purely so the `AnalysisTemplate` can aim a probe at *only* the new version — something the plain `dashboard` Service can't do, since it can't distinguish the two ReplicaSets.
 
 ---
 
@@ -298,19 +335,21 @@ git commit -m "Ship a bad dashboard release: bump image tag to 1.0.3"
 git push origin main
 ```
 
-Watch it happen. This takes about a minute, so don't be surprised if nothing looks different for the first 30-40 seconds:
+Watch it happen. This takes about two minutes end to end, so don't be surprised if nothing looks different for the first 30-40 seconds:
 
 ```bash
 kubectl argo rollouts get rollout dashboard -n finovra --watch
 ```
 
-You'll see `SetWeight` jump to `50`, then the analysis step start running. After a few failed checks, the status flips to `✖ Degraded` with a message like:
+You'll see `SetWeight` jump to `50`, then the analysis step start running. **While that's in progress**, open the dashboard in your browser (or keep it open from an earlier module) and refresh it repeatedly every few seconds. Because `dashboard`'s Service round-robins across both the stable and canary Pods, roughly every other refresh should land on a `1.0.3` Pod — you'll see the `insurance` and `loans` tiles flip to red ("Failed to load") on those hits, and back to normal green on the ones that land on a stable `1.0.2` Pod. That's the same 50/50 split the analysis is independently checking, just made visible.
+
+After enough failed checks (`8` in a row, at `15s` apart — about two minutes), the rollout status flips to `✖ Degraded` with a message like:
 
 ```
-RolloutAborted: ... Metric "healthz-ok" assessed Error due to consecutiveErrors (5) > consecutiveErrorLimit (4): "Error Message: received non 2xx response code: 500"
+RolloutAborted: ... Metric "healthz-ok" assessed Error due to consecutiveErrors (9) > consecutiveErrorLimit (8): "Error Message: received non 2xx response code: 500"
 ```
 
-Press `Ctrl+C`. Then confirm two things:
+Once that happens, the canary Pods get scaled down and every refresh goes back to all-green — so if you want another look at the red tiles, catch it before the `Degraded` status appears. Press `Ctrl+C`. Then confirm two things:
 
 ```bash
 argocd app get finovra
@@ -364,3 +403,35 @@ A fresh commit is a fresh revision, so Argo Rollouts attempts the canary again f
 ## What's Next
 
 In **Module 7**, we build a real dev → staging → prod promotion flow using Kustomize overlays and a PR-based workflow — plus a short add-on on Sync Waves and Lifecycle Hooks, using Finovra's own dashboard-depends-on-backends shape as the example.
+
+---
+
+## Appendix: How the `1.0.3` Image Was Built (Instructor Note)
+
+This isn't part of the lab — it's here so `1.0.3` can be rebuilt or a future bad tag can be made the same way, without re-deriving the mechanism.
+
+`dashboard`'s `server.js` supports two independent, env-driven failure toggles, both defaulting to off/empty so every normal build stays clean:
+- `FAIL_MODE=true` — makes `/healthz` return `500` instead of `200`. This is what the `AnalysisTemplate` catches.
+- `FAIL_TILES=insurance,loans` — makes `/api/tiles` report those specific services as failed (`status: "error"`, rendered as a red tile), regardless of whether the real backend is actually healthy. This is what makes the bad canary visible in the browser, independent of the automated check.
+
+Neither is wired into `values.yaml` or the Helm chart — on purpose, so bumping the image tag stays the only thing the chart needs to know about. Instead, the `Dockerfile` exposes them as build args with safe defaults:
+
+```dockerfile
+ARG FAIL_MODE=false
+ARG FAIL_TILES=""
+ENV FAIL_MODE=${FAIL_MODE}
+ENV FAIL_TILES=${FAIL_TILES}
+```
+
+The CI workflow (`dashboard-image.yml`) never passes these args, so every image it builds from a normal `VERSION` bump is clean. `1.0.3` was instead built and pushed by hand, once, with the bad defaults baked in at the image level:
+
+```bash
+cd services/dashboard
+docker build \
+  --build-arg FAIL_MODE=true \
+  --build-arg FAIL_TILES=insurance,loans \
+  -t arsr319/finovra-dashboard:1.0.3 .
+docker push arsr319/finovra-dashboard:1.0.3
+```
+
+Because the bad behavior lives entirely in that one image's build args — not in source code checked into `main`, not in a chart value — `main` and the CI pipeline never need to know `1.0.3` is broken. Rebuilding it later, or minting a new bad tag (e.g. for a different module), is the same two-line `docker build`/`docker push` with a new `-t`.

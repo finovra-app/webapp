@@ -7,6 +7,17 @@ const VERSION = process.env.VERSION || "dev";
 const FAIL_MODE = (process.env.FAIL_MODE || "false").toLowerCase() === "true";
 const SERVICES = parseServices(process.env.SERVICES || "");
 
+// Comma-separated service names to render as failed on the dashboard itself,
+// regardless of whether the real backend is healthy. Simulates a dashboard-side
+// rendering bug (as opposed to FAIL_MODE, which simulates the dashboard's own
+// /healthz failing) — used to make a bad canary visibly obvious in the browser.
+const FAIL_TILES = new Set(
+  (process.env.FAIL_TILES || "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+);
+
 const ICONS = {
   accounts: "💰",
   investments: "📈",
@@ -55,6 +66,9 @@ app.get("/api/tiles", async (req, res) => {
   const tiles = await Promise.all(
     SERVICES.map(async ({ name, url }) => {
       const icon = ICONS[name.toLowerCase()] || DEFAULT_ICON;
+      if (FAIL_TILES.has(name.toLowerCase())) {
+        return { name, icon, healthy: false, status: "error", version: null };
+      }
       try {
         const [health, version] = await Promise.all([
           fetchJson(`${url}/healthz`),
@@ -80,5 +94,6 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => {
   const names = SERVICES.map((s) => s.name).join(", ") || "(none)";
-  console.log(`dashboard ${VERSION} listening on :${PORT}, tracking services: ${names} (FAIL_MODE=${FAIL_MODE})`);
+  const failTiles = [...FAIL_TILES].join(",") || "(none)";
+  console.log(`dashboard ${VERSION} listening on :${PORT}, tracking services: ${names} (FAIL_MODE=${FAIL_MODE}, FAIL_TILES=${failTiles})`);
 });
