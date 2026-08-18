@@ -9,7 +9,7 @@
 
 By the end of this module, you should be able to:
 - Explain why most real teams organize multiple environments with directories/overlays on one branch, not one long-lived branch per environment
-- Build `staging` and `prod` Kustomize overlays on top of Finovra's existing base, each with its own environment-specific patch
+- Build `staging` and `prod` Kustomize overlays on top of Finovra's existing base, each with its own environment-specific overrides
 - Set up a PR-based promotion flow, and explain the difference between the two separate gates a change passes through before it's live in prod
 - Use the App-of-Apps pattern to manage multiple `Application` objects from one root, instead of `kubectl apply`-ing each by hand
 - Use `sync-wave` annotations to control the order resources apply within one sync
@@ -40,6 +40,8 @@ This module builds the overlay-per-environment version — it's what Finovra's `
 ## 2. Promoting dev → staging → prod
 
 Finovra's existing `finovra` Application (Helm-based, namespace `finovra`) has been "dev" all along, without ever needing the label — every module so far has deployed straight to it. This module adds two new environments alongside it: **staging** and **prod**, each its own `Application`, each pointed at its own Kustomize overlay.
+
+**Dev deliberately stays exactly as it is — Helm, with the canary `Rollout` from Module 6 — rather than getting rebuilt on Kustomize to match.** That does mean dev and staging/prod use different packaging tools, which is worth naming rather than glossing over: most real teams keep one tool per app across all its environments. It's a reasonable exception here specifically because dev is the environment where you've been canarying and deliberately breaking things; staging/prod are where the *promotion pattern* is the lesson, and rebuilding dev on Kustomize would mean either dropping Module 6's `Rollout` entirely or re-porting it into the Kustomize base — real extra work that teaches nothing new about promotion.
 
 A promotion is nothing more than **a PR that bumps one value in one overlay** — normally the image tag, once you've proven it's good somewhere earlier in the chain:
 
@@ -86,8 +88,6 @@ spec:
     repoURL: https://github.com/<your-username>/gitops.git
     targetRevision: main
     path: apps
-    directory:
-      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -99,7 +99,7 @@ spec:
 
 This is exactly the plain-YAML directory source type from Module 3 — nothing new there — except what it's managing is a folder of `Application` objects rather than a folder of Deployments/Services. Apply `root.yaml` once, and everything inside `apps/` (`finovra.yaml`, `finovra-staging.yaml`, `finovra-prod.yaml`) gets created and kept in sync automatically. Add a fourth environment later, and it's a fourth file in `apps/` plus a `git push` — no new `kubectl apply` command to remember.
 
-`recurse: false` matters here: `apps/` should contain only `Application` manifests, one level deep. If you ever need nested app-of-apps (a root managing other roots), that's when `recurse: true` comes into play — out of scope for this module, but worth knowing the flag exists.
+`apps/` staying one level deep (only `Application` manifests, no subfolders) is what you want here — that's `source.directory.recurse`'s job to control, and its default is already `false`. **Don't write `directory: {recurse: false}` explicitly, even though it's tempting to be explicit about it:** `recurse` is a boolean that gets silently dropped whenever it's `false`, since `false` and "not set" serialize identically. Git would keep declaring it, the live `Application` object would never actually store it, and every reconciliation would see phantom drift and report `OutOfSync` forever, even though nothing is actually wrong — a real, easy-to-hit gotcha, not hypothetical. Leaving the field out entirely means there's nothing for that mismatch to happen to. If you ever need nested app-of-apps (a root managing other roots), that's when you'd set `recurse: true` for real — a non-default value serializes and persists just fine.
 
 ---
 
@@ -175,29 +175,16 @@ kind: Kustomization
 resources:
   - ../../base
 
-patches:
-  - path: dashboard-replicas-patch.yaml
-    target:
-      kind: Deployment
-      name: dashboard
+replicas:
+  - name: dashboard
+    count: 2
 
 images:
   - name: arsr319/finovra-dashboard
     newTag: "1.0.2"
 ```
 
-Create `kustomize/overlays/staging/dashboard-replicas-patch.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: dashboard
-spec:
-  replicas: 2
-```
-
-The `images:` transformer is the piece that makes this a *promotion* overlay rather than just another environment copy — it's the one line a promotion PR will actually touch going forward. Render it locally before moving on:
+Same two dedicated transformers Module 4 introduced (`replicas:`, `images:`) — no separate patch file needed here either. The `images:` line is the piece that makes this a *promotion* overlay rather than just another environment copy — it's the one line a promotion PR will actually touch going forward. Render it locally before moving on:
 
 ```bash
 kubectl kustomize kustomize/overlays/staging
@@ -216,29 +203,39 @@ kind: Kustomization
 resources:
   - ../../base
 
-patches:
-  - path: dashboard-replicas-patch.yaml
-    target:
-      kind: Deployment
-      name: dashboard
+replicas:
+  - name: dashboard
+    count: 3
 
 images:
   - name: arsr319/finovra-dashboard
     newTag: "1.0.0"
 ```
 
-Create `kustomize/overlays/prod/dashboard-replicas-patch.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: dashboard
-spec:
-  replicas: 3
-```
-
 Note prod deliberately starts pinned to `1.0.0`, one step behind staging's `1.0.2` — that gap is what you'll close with a real promotion PR in Step 5. Render and sanity-check the same way as Step 1.
+
+> **If Finovra used Helm for this instead:** you wouldn't need overlay directories at all — just a `values-staging.yaml` and `values-prod.yaml` sitting next to the existing `values-dev.yaml`, each overriding `dashboard.image.tag`:
+>
+> ```yaml
+> # values-staging.yaml
+> dashboard:
+>   replicas: 2
+>   image:
+>     tag: "1.0.2"
+> ```
+>
+> The `Application` would point at the same `helm-chart` path dev already uses, swapping in a values file instead of a Kustomize path:
+>
+> ```yaml
+> spec:
+>   source:
+>     path: helm-chart
+>     helm:
+>       valueFiles:
+>         - values-staging.yaml
+> ```
+>
+> A promotion PR would then bump one line inside `values-prod.yaml` instead of `kustomize/overlays/prod/kustomization.yaml`'s `images.newTag` — same promotion mechanic, same two gates from Section 2, just expressed through Helm's override system instead of Kustomize's. This module builds the Kustomize version for real, since that's the tool most teams reach for specifically for environment overlays — but the pattern itself isn't tool-specific, and you'd land in the same place either way.
 
 ### Step 3 — Add the two new Applications
 

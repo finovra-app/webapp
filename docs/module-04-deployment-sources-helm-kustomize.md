@@ -10,7 +10,7 @@
 By the end of this module, you should be able to:
 - Explain the three ways ArgoCD can source manifests: plain YAML, Helm, and Kustomize
 - Deploy Finovra via its Helm chart, and override values through the `Application` spec — both a values file and an ad-hoc parameter
-- Deploy Finovra via a Kustomize overlay that patches one field on one resource, and explain why that avoids duplicating manifests across environments
+- Deploy Finovra via a Kustomize overlay that overrides one field on one resource, and explain why that avoids duplicating manifests across environments
 - Make an informed call on which source type fits a given team or project
 
 *(Jsonnet/Ksonnet exists as a fourth option but sees very little real-world adoption today — we're skipping it entirely, per this course's real-world-first philosophy.)*
@@ -130,7 +130,7 @@ labels:
     includeSelectors: false
 ```
 
-On its own, that's not very interesting — it's the same manifests plus one label. The actual value shows up once you **overlay** something on top of it. `kustomize/overlays/dev/` does exactly that: it takes the base as-is and patches one field on one resource, without touching the base at all:
+On its own, that's not very interesting — it's the same manifests plus one label. The actual value shows up once you **overlay** something on top of it. `kustomize/overlays/dev/` does exactly that: it takes the base as-is and overrides one field on one resource, without touching the base at all:
 
 ```yaml
 # kustomize/overlays/dev/kustomization.yaml
@@ -140,28 +140,18 @@ kind: Kustomization
 resources:
   - ../../base
 
-patches:
-  - path: dashboard-replicas-patch.yaml
-    target:
-      kind: Deployment
-      name: dashboard
+replicas:
+  - name: dashboard
+    count: 2
 ```
 
-```yaml
-# kustomize/overlays/dev/dashboard-replicas-patch.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: dashboard
-spec:
-  replicas: 2
-```
+That's the whole overlay — no separate patch file needed. `replicas:` is one of a handful of fields Kustomize special-cases with a dedicated, one-line transformer (`images:`, which Module 7 uses for promoting a dashboard version between environments, is another). For anything **without** a dedicated transformer — an env var, a resource limit, any arbitrary field — you'd reach for `patches:` instead, a more verbose but fully general mechanism that can target any field on any resource. Worth knowing both exist: use the dedicated transformer when one covers what you need, and `patches:` for everything else.
 
 **This is when Kustomize actually earns its keep:** imagine `staging` needs `dashboard` at 2 replicas but every backend stays at 1, while `prod` needs different resource limits across the board. With plain YAML you'd maintain three full copies of every manifest. With Kustomize, you maintain **one base** and a handful of small overlay folders, each containing only the fields that differ for that environment — everything else is inherited untouched. That's the whole pitch: no duplication, no templating language, just "here's the base, here's what's different here."
 
 > **Why a self-contained base, not a pointer back at `k8s/plain-manifests/`?** Kustomize refuses by default to read files outside the directory it's building from — a deliberate security boundary. A base is meant to stand alone; overlays are what reference *it*, not the other way around.
 
-No `{{ }}` syntax anywhere — Kustomize never templates a file, it only **transforms** the plain YAML through a fixed set of operations (`labels`, `patches`, `images`, `namePrefix`, and a few others). Render it and diff against the plain manifests to see exactly what changed:
+No `{{ }}` syntax anywhere — Kustomize never templates a file, it only **transforms** the plain YAML through a fixed set of operations (`labels`, `patches`, `images`, `replicas`, `namePrefix`, and a few others). Render it and diff against the plain manifests to see exactly what changed:
 
 ```bash
 kubectl kustomize kustomize/base
@@ -400,9 +390,9 @@ spec:
 | **`source.helm.valueFiles`** | Application-level list of additional values files layered on top of the chart's defaults |
 | **`source.helm.parameters`** | Application-level list of single ad-hoc value overrides, equivalent to `helm --set` |
 | **Kustomize base** | A self-contained, plain-YAML directory that overlays are built on top of |
-| **Kustomize overlay** | A directory that references a base and layers environment-specific patches/labels on top, without editing the base |
-| **Kustomize patch** | A targeted change to one field on one resource — Finovra's `dev` overlay patches only `dashboard`'s `replicas` |
-| **Kustomize transformer** | An operation (labels, patches, images, etc.) Kustomize applies to a base or overlay — never templating, always structural |
+| **Kustomize overlay** | A directory that references a base and layers environment-specific overrides/labels on top, without editing the base |
+| **Kustomize transformer** | A built-in operation (`labels`, `replicas`, `images`, etc.) Kustomize applies to a base or overlay — never templating, always structural. Finovra's `dev` overlay uses `replicas:` to set only `dashboard`'s replica count |
+| **Kustomize patch** | The general-purpose fallback for any field a dedicated transformer doesn't cover — more verbose than `replicas:`/`images:`, but works on arbitrary fields |
 
 ---
 
@@ -411,7 +401,7 @@ spec:
 1. Why does the Helm chart's image-tag logic fall back to a global `.Values.image.tag` instead of requiring every service to set its own tag explicitly?
 2. What's the practical difference between `source.helm.valueFiles` and `source.helm.parameters` — when would you reach for each?
 3. Why does Kustomize's base at `kustomize/base/` contain its own copies of the manifests instead of referencing `k8s/plain-manifests/` directly?
-4. The `dev` overlay's patch only mentions `dashboard` and only sets `replicas: 2`. Why did the other four Deployments still come out with the `managed-by: kustomize` label?
+4. The `dev` overlay's `replicas:` transformer only mentions `dashboard`. Why did the other four Deployments still come out with the `managed-by: kustomize` label?
 5. If `staging` and `prod` both needed their own replica counts, what would you add to `kustomize/overlays/` — and what would you *not* need to touch?
 6. In one sentence each: when would a team reach for Helm over Kustomize, and vice versa?
 
