@@ -320,4 +320,4 @@ You should see your `in-cluster` target listed — this is the cluster ArgoCD it
 
 ## What's Next
 
-In **Module 3**, we'll deploy our first real `Application` — **Finovra**, the fintech dashboard from Module 0 — and walk through manual sync, automated sync, and reading ArgoCD's health/sync status.
+In **Module 3**, we'll deploy our first real `Application` — **Finovra**, the fintech dashboard — and walk through manual sync, automated sync, and reading ArgoCD's health/sync status.

@@ -162,7 +162,7 @@ argocd app sync finovra
 argocd app get finovra
 ```
 
-The dashboard goes broken again — `Health Status: Healthy`, visibly not working. No new commit was needed: Git already had `1.0.1` declared, and automated sync just did its job. This is exactly the risk Section 3 described.
+The dashboard goes broken again — `Health Status: Healthy`, visibly not working. No new commit was needed: Git already had `1.0.1` declared, and automated sync just did its job — redeploying whatever Git says, regardless of whether that's actually good.
 
 Now run the before/after from Technique 2. First, the unprotected attempt:
 

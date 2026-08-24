@@ -58,7 +58,7 @@ helm-chart/
     └── loans-service.yaml
 ```
 
-Each template is templated from the same plain YAML you already know — for example, `accounts-service`'s image line went from this (Module 3):
+Each template is templated from the same plain YAML — for example, `accounts-service`'s image line went from this:
 
 ```yaml
 image: arsr319/finovra-accounts-service:1.0.0
@@ -189,7 +189,7 @@ Confirm it renders 5 Deployments + 5 Services with no errors, and every image ta
 
 ### Step 2 — Point your Application at the chart
 
-Edit your `finovra.yaml` (the same file from Module 3) to match this exactly — `source.path` changes from `k8s/plain-manifests` to `helm-chart`, and the `directory.recurse` block is gone entirely (Helm doesn't use it, and leaving it in is a common copy-paste mistake here):
+Edit your `finovra.yaml` to match this exactly — `source.path` changes from `k8s/plain-manifests` to `helm-chart`, and the `directory.recurse` block is gone entirely (Helm doesn't use it, and leaving it in is a common copy-paste mistake here):
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -304,7 +304,7 @@ kubectl apply -f finovra.yaml
 kubectl get deployment dashboard -n finovra -o jsonpath='{.spec.template.spec.containers[0].image}'
 ```
 
-You should see `arsr319/finovra-dashboard:1.0.1` — the practice-broken build from Module 5/6, deployed here just to prove the override mechanism works. Don't bother opening the browser; you already know what this one does.
+You should see `arsr319/finovra-dashboard:1.0.1` — the practice-broken build from Module 5/6, deployed here just to prove the override mechanism works. Don't bother opening the browser — this is only a check that the override reaches the running Deployment, not a visual demo.
 
 **Revert:** delete the `helm:` block from `finovra.yaml`, reapply. Confirm you're back to `1.0.0` and `Health Status: Healthy`.
 

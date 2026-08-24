@@ -41,7 +41,7 @@ This module builds the overlay-per-environment version — it's what Finovra's `
 
 Finovra's existing `finovra` Application (Helm-based, namespace `finovra`) has been "dev" all along, without ever needing the label — every module so far has deployed straight to it. This module adds two new environments alongside it: **staging** and **prod**, each its own `Application`, each pointed at its own Kustomize overlay.
 
-**Dev deliberately stays exactly as it is — Helm, with the canary `Rollout` from Module 6 — rather than getting rebuilt on Kustomize to match.** That does mean dev and staging/prod use different packaging tools, which is worth naming rather than glossing over: most real teams keep one tool per app across all its environments. It's a reasonable exception here specifically because dev is the environment where you've been canarying and deliberately breaking things; staging/prod are where the *promotion pattern* is the lesson, and rebuilding dev on Kustomize would mean either dropping Module 6's `Rollout` entirely or re-porting it into the Kustomize base — real extra work that teaches nothing new about promotion.
+**Dev deliberately stays exactly as it is — Helm-based, running `dashboard` as a canary `Rollout` — rather than getting rebuilt on Kustomize to match.** That does mean dev and staging/prod use different packaging tools, which is worth naming rather than glossing over: most real teams keep one tool per app across all its environments. It's a reasonable exception here specifically because dev is the environment where you've been canarying and deliberately breaking things; staging/prod are where the *promotion pattern* is the lesson, and rebuilding dev on Kustomize would mean either dropping the canary `Rollout` entirely or re-porting it into the Kustomize base — real extra work that teaches nothing new about promotion.
 
 A promotion is nothing more than **a PR that bumps one value in one overlay** — normally the image tag, once you've proven it's good somewhere earlier in the chain:
 
@@ -63,7 +63,7 @@ flowchart LR
 Notice there are **two separate gates**, not one, and they guard different things:
 
 1. **The PR review gate** — a human approves the PR before it merges to `main`. This gates *what's allowed into Git*. Set this up the same way you would for any repo: on GitHub, enable branch protection on `main` with "Require a pull request before merging."
-2. **The manual-sync gate on `prod`** — even after the PR merges and Git says prod should be on `1.0.2`, nothing actually deploys until someone runs `argocd app sync finovra-prod` (or clicks **Sync** in the UI). This is `syncPolicy` with no `automated:` block at all — the same manual-vs-automated distinction from Module 3, deliberately left manual here.
+2. **The manual-sync gate on `prod`** — even after the PR merges and Git says prod should be on `1.0.2`, nothing actually deploys until someone runs `argocd app sync finovra-prod` (or clicks **Sync** in the UI). This is `syncPolicy` with no `automated:` block at all, deliberately left manual here.
 
 That second gate is what the syllabus calls "a manual approval gate before prod," and it's a real, common pattern — merging code and deploying code are two different actions, and prod is exactly where teams want that gap to be explicit rather than automatic. `staging`, by contrast, stays `automated` — the whole point of a staging environment is that it deploys itself the moment something merges, so it stays a faithful preview of what prod is about to get.
 
@@ -97,7 +97,7 @@ spec:
       selfHeal: true
 ```
 
-This is exactly the plain-YAML directory source type from Module 3 — nothing new there — except what it's managing is a folder of `Application` objects rather than a folder of Deployments/Services. Apply `root.yaml` once, and everything inside `apps/` (`finovra.yaml`, `finovra-staging.yaml`, `finovra-prod.yaml`) gets created and kept in sync automatically. Add a fourth environment later, and it's a fourth file in `apps/` plus a `git push` — no new `kubectl apply` command to remember.
+This is the plain-YAML directory source type — nothing new there — except what it's managing is a folder of `Application` objects rather than a folder of Deployments/Services. Apply `root.yaml` once, and everything inside `apps/` (`finovra.yaml`, `finovra-staging.yaml`, `finovra-prod.yaml`) gets created and kept in sync automatically. Add a fourth environment later, and it's a fourth file in `apps/` plus a `git push` — no new `kubectl apply` command to remember.
 
 `apps/` staying one level deep (only `Application` manifests, no subfolders) is what you want here — that's `source.directory.recurse`'s job to control, and its default is already `false`. **Don't write `directory: {recurse: false}` explicitly, even though it's tempting to be explicit about it:** `recurse` is a boolean that gets silently dropped whenever it's `false`, since `false` and "not set" serialize identically. Git would keep declaring it, the live `Application` object would never actually store it, and every reconciliation would see phantom drift and report `OutOfSync` forever, even though nothing is actually wrong — a real, easy-to-hit gotcha, not hypothetical. Leaving the field out entirely means there's nothing for that mismatch to happen to. If you ever need nested app-of-apps (a root managing other roots), that's when you'd set `recurse: true` for real — a non-default value serializes and persists just fine.
 
@@ -184,7 +184,7 @@ images:
     newTag: "1.0.2"
 ```
 
-Same two dedicated transformers Module 4 introduced (`replicas:`, `images:`) — no separate patch file needed here either. The `images:` line is the piece that makes this a *promotion* overlay rather than just another environment copy — it's the one line a promotion PR will actually touch going forward. Render it locally before moving on:
+Same two dedicated transformers (`replicas:`, `images:`) — no separate patch file needed here either. The `images:` line is the piece that makes this a *promotion* overlay rather than just another environment copy — it's the one line a promotion PR will actually touch going forward. Render it locally before moving on:
 
 ```bash
 kubectl kustomize kustomize/overlays/staging

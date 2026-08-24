@@ -18,7 +18,7 @@ By the end of this module, you should be able to:
 
 ## 1. Why Plain Sync Isn't Enough
 
-Every deploy so far has worked the same way: push a change, ArgoCD applies it to every Pod, and you find out afterward whether it was a good idea. We've already seen how bad "afterward" can be. A broken release can look completely `Healthy` to ArgoCD while it's actually broken for real users.
+Every deploy so far has worked the same way: push a change, ArgoCD applies it to every Pod, and you find out afterward whether it was a good idea. A broken release can look completely `Healthy` to ArgoCD while it's actually broken for real users — and by the time "afterward" arrives, every Pod is already running it.
 
 **Argo Rollouts** fixes this by changing the shape of a deploy:
 - A new release first ships to a small subset of Pods — the **canary**
@@ -117,7 +117,7 @@ spec:
 - **`canaryService` / `stableService`** — two Services the Rollout controller manages for you, each pointed at just the canary Pods or just the stable Pods. You pre-create them as empty shells; the controller fills in the right selector.
 - **`steps`** — `setWeight: 50` splits replicas roughly 50/50 between canary and stable. `analysis` then runs a check against the canary before going any further.
 - **What stays unchanged:** the existing `dashboard` Service (what you `port-forward` to view the app) still selects on plain `app: dashboard`, so it keeps working exactly as before. `canaryService`/`stableService` exist purely so the analysis step has something precise to check.
-- **What's not here:** no `FAIL_MODE`/`FAIL_TILES` field in `values.yaml`, no chart change of any kind to make `1.0.3` fail. Those two env vars exist in `dashboard`'s code, but for `1.0.3` they're baked in as image-level defaults at `docker build` time (see the appendix), not passed in by the chart. From the chart's point of view, `1.0.3` is just another tag — a canary of a bad release is just a canary of a bad image tag, the same "bump a value" motion you already know.
+- **What's not here:** no `FAIL_MODE`/`FAIL_TILES` field in `values.yaml`, no chart change of any kind to make `1.0.3` fail. Those two env vars exist in `dashboard`'s code, but for `1.0.3` they're baked in as image-level defaults at `docker build` time (see the appendix), not passed in by the chart. From the chart's point of view, `1.0.3` is just another tag — a canary of a bad release is just a canary of a bad image tag, the same one-line change as any other version bump.
 
 The canary/stable Services and the `AnalysisTemplate` don't need any templating — they're static, so they live in one new chart file, `dashboard-canary.yaml`:
 

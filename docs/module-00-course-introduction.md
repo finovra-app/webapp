@@ -60,12 +60,13 @@ feature — not a new service, just like a real release usually does:
 | Version | Adds | Introduced in |
 |---|---|---|
 | `1.0.0` | Baseline dashboard, all four tiles live | Module 3 |
-| `2.0.0`+ | Further dashboard features (a "What's New" changelog panel, and more) as the course progresses | Later modules |
+| `1.0.2` | Dashboard repackaged as an Argo Rollouts canary; the version staging/prod get promoted to | Module 6 |
 
-Modules 5 and 6 (rollbacks and progressive delivery) use a separate,
-one-off broken release — `arsr319/finovra-dashboard:1.0.1` — as practice
-material. It's deliberately off this roadmap: the whole point of those
-modules is recovering from it.
+Two modules also use their own separate, one-off broken releases as
+practice material — both deliberately off this roadmap, and both
+recovered from before their module ends. Module 5 uses
+`arsr319/finovra-dashboard:1.0.1`. Module 6 uses its own separate broken
+build, `1.0.3`, to demonstrate an automated canary rollback.
 
 Every image is already built and published for you on Docker Hub as
 `arsr319/finovra-<service>:<version>` — for example

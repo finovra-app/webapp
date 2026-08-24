@@ -17,7 +17,7 @@ By the end of this module, you should be able to:
 
 ## 1. The Problem: One YAML Per App Stops Scaling
 
-Count what Module 7 left you maintaining by hand: `apps/finovra.yaml`, `apps/finovra-staging.yaml`, `apps/finovra-prod.yaml`, plus `apps/root.yaml` to tie them together — four files, for **one app across three environments**. That was already a little repetitive; `finovra-staging.yaml` and `finovra-prod.yaml` differ from each other in exactly two fields (`path`, `destination.namespace`) and are otherwise identical copy-paste. `finovra.yaml` differs a bit more (it's Helm-based, the others are Kustomize-based), but the same shape — one hand-maintained file per environment — is still the thing doing the least amount of actual work.
+Count what you're maintaining by hand right now: `apps/finovra.yaml`, `apps/finovra-staging.yaml`, `apps/finovra-prod.yaml`, plus `apps/root.yaml` to tie them together — four files, for **one app across three environments**. That was already a little repetitive; `finovra-staging.yaml` and `finovra-prod.yaml` differ from each other in exactly two fields (`path`, `destination.namespace`) and are otherwise identical copy-paste. `finovra.yaml` differs a bit more (it's Helm-based, the others are Kustomize-based), but the same shape — one hand-maintained file per environment — is still the thing doing the least amount of actual work.
 
 Now imagine Finovra had ten environments instead of three — dev, staging, prod, plus a handful of short-lived preview environments. That's ten near-identical YAML files, each one a chance to typo a namespace, forget `CreateNamespace=true`, or drift out of sync with the pattern everyone else is copying from.
 
@@ -37,7 +37,7 @@ flowchart LR
     Tmpl --> A3
 ```
 
-There's nothing separate to install here — the ApplicationSet controller ships bundled with ArgoCD's own Helm chart and has been running in your cluster since Module 2, whether you'd used it yet or not:
+There's nothing separate to install here — the ApplicationSet controller ships bundled with ArgoCD's own Helm chart and has been running in your cluster since you first installed ArgoCD, whether you'd used it yet or not:
 
 ```bash
 kubectl get pods -n argocd | grep applicationset
@@ -92,7 +92,7 @@ spec:
           - CreateNamespace=true
 ```
 
-Three `elements`, one `template` — the rendered result is functionally the same three `Application`s you hand-wrote in Module 7, just generated instead of copy-pasted, all sharing one `syncPolicy` (`automated: { prune: true, selfHeal: true }`), so a push to `main` rolls out to dev, staging, and prod the same way.
+Three `elements`, one `template` — the rendered result is functionally identical to three hand-written `Application`s, one per environment, just generated instead of copy-pasted, all sharing one `syncPolicy` (`automated: { prune: true, selfHeal: true }`), so a push to `main` rolls out to dev, staging, and prod the same way.
 
 ---
 
@@ -134,7 +134,7 @@ One thing worth flagging: dev's `Application` is renamed from `finovra` to `fino
 
 With `syncPolicy.automated` shared across all three elements, a push to `main` that touches `kustomize/overlays/prod/` rolls out to prod the same way it rolls out to dev and staging — automatically, no approval step in ArgoCD itself.
 
-If you want a human checkpoint before prod changes, it now has to live **before** the push — e.g. a required PR review/approval on `kustomize/overlays/prod/` in the `gitops` repo, or a promotion step like the one Module 7 covered, rather than inside the `ApplicationSet` itself. ArgoCD is still the thing making prod match git; the question of *when* git is allowed to change is entirely a Git-hosting concern (branch protection, CODEOWNERS, required reviewers), not an ArgoCD one.
+If you want a human checkpoint before prod changes, it now has to live **before** the push — e.g. a required PR review/approval on `kustomize/overlays/prod/` in the `gitops` repo, or a promotion step gated by a separate approval process, rather than inside the `ApplicationSet` itself. ArgoCD is still the thing making prod match git; the question of *when* git is allowed to change is entirely a Git-hosting concern (branch protection, CODEOWNERS, required reviewers), not an ArgoCD one.
 
 ---
 

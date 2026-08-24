@@ -47,11 +47,10 @@ Nothing changes about *how* you deploy — same repo, same `ApplicationSet`, sam
 
 ## 2. Registering a Cluster with ArgoCD
 
-`argocd cluster add <context>` is how you tell ArgoCD about a second cluster. It does three things, all in one command:
+`argocd cluster add <context>` is how you tell ArgoCD about a second cluster. Unlike most `argocd` commands, `cluster add`/`list`/`rm` don't go through your `argocd login` session at all — they locate the ArgoCD installation directly via your **current kubectl context**, by finding the `argocd-server` pod running there (this is also why, back in the lab's Step 2, running one of these commands while your context was still pointed at the freshly created `finovra-prod` cluster failed outright: no `argocd-server` pod exists there to find). Once located, `argocd cluster add` does its work in **two separate places**:
 
-1. Reads the named context from your local kubeconfig to find the target cluster's API server and credentials.
-2. Creates a `ServiceAccount` (default name `argocd-manager`) and a `ClusterRoleBinding` granting it `cluster-admin` **on the target cluster** — this is what lets ArgoCD, running on the hub cluster, actually apply resources to a cluster it isn't running on.
-3. Stores the target cluster's API server URL and that service account's token as a `Secret` in the `argocd` namespace **on the hub cluster** — this is what shows up when you run `argocd cluster list`.
+1. **On your host, using your local kubeconfig:** it reads the *target* context (the one you passed as an argument) to find that cluster's API server and credentials, then creates a `ServiceAccount` (default name `argocd-manager`), a `ClusterRole`, a `ClusterRoleBinding` granting it `cluster-admin`, and a long-lived bearer token — all **on the target cluster**. This part runs as a direct `kubectl`-style call from wherever you typed the command.
+2. **Inside the `argocd-server` pod it just found:** it hands that token over, and `argocd-server` itself independently dials the target's API server — to check connectivity and read its version — before writing the registration as a `Secret` in the `argocd` namespace **on the hub cluster**. This part runs from inside a pod on your *first* `kind` cluster, not from your host.
 
 ```bash
 argocd cluster add kind-finovra-prod --name finovra-prod-cluster
@@ -62,21 +61,52 @@ Once registered, any `Application` or `ApplicationSet` template can target it vi
 
 ---
 
-## 3. The `kind`-Specific Gotcha: Internal vs. External Addresses
+## 3. The `kind`-Specific Gotcha: Two Callers, Two Valid Addresses
 
-Here's the part that trips up almost everyone doing this with two local `kind` clusters for the first time, so it's worth understanding *before* you hit it rather than debugging it blind.
+Here's the part that trips up almost everyone doing this with two local `kind` clusters for the first time, so it's worth understanding *before* you hit it rather than debugging it blind — and worth understanding via Section 2's two-caller breakdown, because the fix follows directly from it.
 
-When you run `kind create cluster --name finovra-prod`, `kind` merges a new context into your kubeconfig with a server address like `https://127.0.0.1:54321` — a port on your **host machine**, forwarded into the cluster's control-plane container. That address works fine when *you* run `kubectl` from your laptop.
+When you run `kind create cluster --name finovra-prod`, `kind` merges a new context into your kubeconfig with a server address like `https://127.0.0.1:54321` — a port on your **host machine**, forwarded into the cluster's control-plane container. That address is exactly what caller (1) above needs — your host really can reach it — so the `ServiceAccount`/`ClusterRole`/token creation step succeeds every time.
 
-It does **not** work for ArgoCD. ArgoCD's pods run *inside* the first `kind` cluster's control-plane container, on Docker's internal `kind` network — not on your host. From inside that container, `127.0.0.1` means "this container," not "your laptop." If you register the cluster using the default host-facing kubeconfig, `argocd cluster add` will appear to succeed, but `argocd cluster list` will show the new cluster stuck in an unreachable/unknown state, and any `Application` targeting it will fail to sync with a connection error.
+It's exactly what caller (2) *can't* use. `argocd-server`'s pod runs inside the *first* `kind` cluster's control-plane container, on Docker's internal `kind` network — not on your host. From inside that pod, `127.0.0.1` means "this pod," not "your laptop" — nothing is listening on port `54321` in there, so the connectivity check fails with `connection refused`, and `argocd cluster add` exits non-zero right after successfully creating the RBAC objects on the target.
 
-The fix: `kind` can export a kubeconfig using the **internal** Docker-network address instead — the one other containers on the same `kind` network (like ArgoCD's pods) can actually reach:
+Swapping in the Docker-network-internal address instead (`https://finovra-prod-control-plane:6443` — a `kind` control-plane container is always reachable by other containers on the same `kind` network at `<cluster-name>-control-plane:6443`) doesn't fix it either — it just fails at the *other* caller instead: your host can't resolve that hostname at all (`no such host`), so step (1) fails before step (2) ever runs.
+
+One command, two callers on two different networks, one address field — there's no single value that satisfies both. The RBAC objects `argocd cluster add` creates on the target before it fails are still real and still valid, though — the fix is to reuse them and finish registration yourself, declaratively, giving `argocd-server` the address *it* needs:
 
 ```bash
-kind export kubeconfig --name finovra-prod --internal --kubeconfig ./finovra-prod-internal.kubeconfig
+# Phase A — let argocd cluster add create the ServiceAccount/RBAC/token on the target.
+# It creates these successfully, then fails at the connectivity check — expected, not a problem.
+argocd cluster add kind-finovra-prod --name finovra-prod-cluster --yes
+
+# Phase B — pull the token argocd cluster add already created, and write the
+# cluster Secret yourself, pointed at the address argocd-server can actually reach.
+TOKEN=$(kubectl --context kind-finovra-prod -n kube-system get secret argocd-manager-long-lived-token -o jsonpath='{.data.token}' | base64 -d)
+CADATA=$(kubectl config view --raw --context kind-finovra-prod -o jsonpath='{.clusters[?(@.name=="kind-finovra-prod")].cluster.certificate-authority-data}')
+
+cat <<EOF | kubectl --context kind-argocd-course apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: finovra-prod-cluster
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: finovra-prod-cluster
+  server: https://finovra-prod-control-plane:6443
+  config: |
+    {
+      "bearerToken": "${TOKEN}",
+      "tlsClientConfig": {
+        "insecure": false,
+        "caData": "${CADATA}"
+      }
+    }
+EOF
 ```
 
-Use *that* file — not your default kubeconfig — for the `argocd cluster add` step. Your default kubeconfig (and `kubectl --context kind-finovra-prod` from your host) is untouched and keeps working normally throughout this module; the internal-address file exists purely so ArgoCD can reach the cluster.
+This is exactly the `Secret` `argocd cluster add` would have written itself, had `argocd-server` been able to reach the target directly — same token, same CA data, just the one field (`server`) swapped for the address that's actually reachable from where the reconciliation traffic will really come from.
 
 ---
 
@@ -109,7 +139,7 @@ So after the switch, the old namespace is orphaned but still running — you hav
 kubectl --context kind-argocd-course delete namespace finovra-prod
 ```
 
-This is the same "no finalizer means no cascading delete" mechanic from Module 8, just triggered by a destination change instead of a deleted `Application` file — and this time it's on you to run the cleanup, since ArgoCD genuinely has no way to know the old copy should go.
+None of this course's `Application` objects carry the `resources-finalizer.argocd.argoproj.io` finalizer, so deleting or redirecting one never cascades to what it deployed — the same reason a deleted `Application` file never takes its workloads down, just triggered here by a destination change instead. Only this time it's on you to run the cleanup, since ArgoCD genuinely has no way to know the old copy should go.
 
 ---
 
@@ -139,16 +169,52 @@ kind create cluster --config kind-config-prod.yaml
 kubectl config get-contexts
 ```
 
-Confirm you now see two contexts: `kind-argocd-course` (your original, still current) and `kind-finovra-prod` (new).
+Confirm you now see two contexts: `kind-argocd-course` (your original) and `kind-finovra-prod` (new). **`kind create cluster` also switches your *current* context to the cluster it just created** — check the `CURRENT` column, `kind-finovra-prod` now has the `*`.
 
-### Step 3 — Export an internal-address kubeconfig and register the cluster
+That matters more than it looks like it should: `argocd cluster` subcommands (`add`, `list`, `rm`) talk to your ArgoCD installation by searching for the `argocd-server` pod on whatever your **current kubectl context** happens to be — not through your `argocd login` session like most other `argocd` commands. Run one of them right now, still pointed at `kind-finovra-prod`, and it fails with `cannot find ready pod with selector: [app.kubernetes.io/name=argocd-server]`, because there's no ArgoCD installed on this brand-new cluster at all. Switch back to the hub cluster before continuing:
 
 ```bash
-kind export kubeconfig --name finovra-prod --internal --kubeconfig ./finovra-prod-internal.kubeconfig
-argocd cluster add kind-finovra-prod --kubeconfig ./finovra-prod-internal.kubeconfig --name finovra-prod-cluster
+kubectl config use-context kind-argocd-course
 ```
 
-You'll be shown the `ServiceAccount`/`ClusterRoleBinding` `argocd cluster add` is about to create on `finovra-prod` and asked to confirm — say yes.
+### Step 3 — Register the cluster (two phases, per Section 3)
+
+**Phase A** — let `argocd cluster add` create the RBAC on the target using your normal, host-reachable kubeconfig:
+
+```bash
+argocd cluster add kind-finovra-prod --name finovra-prod-cluster --yes
+```
+
+You'll see `ServiceAccount "argocd-manager" created`, `ClusterRole "argocd-manager-role" created`, `ClusterRoleBinding ... created`, and `Created bearer token secret ...` — then a `fatal` error: `error getting server version ... connection refused`. **That failure is expected** — it's `argocd-server`, running on the hub cluster, failing to reach your host's `127.0.0.1` address, exactly as Section 3 covers. The objects logged before the failure were created successfully and are what Phase B reuses. (If you re-run this command, it's safe — it'll report the `ServiceAccount`/token as already existing and update the `ClusterRole`/`ClusterRoleBinding` in place.)
+
+**Phase B** — pull the token it already created, and register the cluster yourself with the address `argocd-server` can actually reach:
+
+```bash
+TOKEN=$(kubectl --context kind-finovra-prod -n kube-system get secret argocd-manager-long-lived-token -o jsonpath='{.data.token}' | base64 -d)
+CADATA=$(kubectl config view --raw --context kind-finovra-prod -o jsonpath='{.clusters[?(@.name=="kind-finovra-prod")].cluster.certificate-authority-data}')
+
+cat <<EOF | kubectl --context kind-argocd-course apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: finovra-prod-cluster
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: finovra-prod-cluster
+  server: https://finovra-prod-control-plane:6443
+  config: |
+    {
+      "bearerToken": "${TOKEN}",
+      "tlsClientConfig": {
+        "insecure": false,
+        "caData": "${CADATA}"
+      }
+    }
+EOF
+```
 
 ### Step 4 — Confirm registration
 
@@ -156,7 +222,7 @@ You'll be shown the `ServiceAccount`/`ClusterRoleBinding` `argocd cluster add` i
 argocd cluster list
 ```
 
-Confirm you see two entries: the local `in-cluster` one (`https://kubernetes.default.svc`) and the new `finovra-prod-cluster` one, with a `STATUS` of `Successful` and a `SERVER` address that looks like `https://finovra-prod-control-plane:6443` — the internal address from Step 3, **not** a `127.0.0.1:*` address. If you see `127.0.0.1` here, you registered the wrong kubeconfig — re-run Step 3.
+Confirm you see two entries: the local `in-cluster` one (`https://kubernetes.default.svc`) and the new `finovra-prod-cluster` one, with a `SERVER` address of `https://finovra-prod-control-plane:6443` — **not** a `127.0.0.1:*` address. `STATUS` will read `Unknown` with the message `Cluster has no applications and is not being monitored` — that's expected and fine; ArgoCD only actively health-checks a registered cluster once at least one `Application` targets it, which happens in Step 7. If `STATUS` instead shows a connection error at that point, re-check the `server` value from Step 3 Phase B.
 
 ### Step 5 — Point prod at the new cluster
 
@@ -257,8 +323,10 @@ kubectl --context kind-argocd-course get namespace finovra-prod
 | Term | Meaning |
 |---|---|
 | **Hub cluster** | The cluster ArgoCD itself runs on — `kind-argocd-course` throughout this course |
-| **`argocd cluster add`** | Registers an external cluster with ArgoCD: creates a `cluster-admin` `ServiceAccount` on the target, stores its address/credentials as a `Secret` on the hub |
-| **Internal vs. external address** | `kind`'s default kubeconfig uses a host-facing `127.0.0.1:<port>` address; `kind export kubeconfig --internal` produces one using the Docker-network address other containers (like ArgoCD's pods) can actually reach |
+| **`argocd cluster add`/`list`/`rm` and current context** | These locate ArgoCD via your *current kubectl context* (finding the `argocd-server` pod there), not through your `argocd login` session — `kind create cluster` silently switches that context to the new cluster, so switch back to the hub before running them |
+| **`argocd cluster add`'s two callers** | The `ServiceAccount`/RBAC/token creation on the target runs from your host, using your local kubeconfig; the final connectivity check and `Secret` write run from inside the `argocd-server` pod on the hub cluster — two different network locations, dialing the same address |
+| **Internal vs. external address** | `kind`'s default kubeconfig uses a host-facing `127.0.0.1:<port>` address, reachable from your host but not from any pod; a `kind` control-plane container is reachable by other containers on the same `kind` Docker network at `https://<cluster-name>-control-plane:6443` — reachable from `argocd-server`'s pod, but not resolvable from your host |
+| **Declarative cluster registration** | A `Secret` labeled `argocd.argoproj.io/secret-type: cluster` in the `argocd` namespace, containing `server`, `name`, and a `config` JSON blob (`bearerToken` + `tlsClientConfig.caData`) — writing this by hand is what `argocd cluster add` does for you when both its callers can reach the same address; on two local `kind` clusters they can't, so it's done directly |
 | **`destination.name`** | References a registered cluster by friendly name instead of a raw API server URL; `in-cluster` is reserved automatically for the cluster ArgoCD runs on, no registration needed |
 | **Destination change ≠ resource move** | Editing an `Application`'s destination makes ArgoCD create resources fresh at the new destination — it does not delete the old copy at the previous destination, since pruning only ever compares Git against the *current* destination |
 
@@ -266,8 +334,8 @@ kubectl --context kind-argocd-course get namespace finovra-prod
 
 ## Recap Questions
 
-1. Why does `argocd cluster add` fail (or register an unreachable cluster) if you point it at the default kubeconfig instead of one exported with `--internal`?
-2. What two things does `argocd cluster add` create on the *target* cluster, and what one thing does it create on the *hub* cluster?
+1. `argocd cluster add` succeeds at creating the `ServiceAccount`/RBAC on the target cluster but then fails with `connection refused`. Which of its two callers failed, and why did the *other* one succeed using the same address?
+2. What two pieces of the manually-written cluster `Secret` come from the target cluster's existing `argocd-manager` `ServiceAccount`/kubeconfig, and what's the one field that differs from what `argocd cluster add` would have written itself?
 3. Why is `in-cluster` usable in `destination.name` without ever running `argocd cluster add` for it?
 4. After Step 7, `finovra-prod` is `Synced`/`Healthy` on the new cluster — why is the old `finovra-prod` namespace on the hub cluster still running at that point, and whose job is it to remove it?
 5. If you wanted `finovra-staging` to move to its own dedicated cluster too, what's the smallest change to `apps/finovra-environments.yaml` that would do it?
@@ -276,4 +344,4 @@ kubectl --context kind-argocd-course get namespace finovra-prod
 
 ## What's Next
 
-In **Module 10**, we leave `kind` behind and provision a real cluster in AWS — EKS via Terraform — and install ArgoCD on it the same way you did locally in Module 2, this time on infrastructure you define, version, and can tear down on demand.
+In **Module 10**, we leave `kind` behind and provision a real cluster in AWS — EKS via Terraform — and install ArgoCD on it via Helm, this time on infrastructure you define, version, and can tear down on demand.
