@@ -11,6 +11,9 @@ Kustomize overlays, CI workflow, and build script are not built yet.
 > separate repo: [`finovra-app/gitops`](https://github.com/finovra-app/gitops)
 > — this repo (`webapp`) holds only application source code and
 > Dockerfiles. See Module 3 for why.
+>
+> Course docs (syllabus + module docs) live in a third repo:
+> [`finovra-app/documents`](https://github.com/finovra-app/documents).
 
 ## Versioning
 
